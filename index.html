@@ -522,6 +522,200 @@ const SUPERVISORS = [
   { name: "GARIMA",               start: 181 },
 ];
 
+/* ---- BLO NAME LOOKUP (PS Number -> Name of BLO, from ANNEXURE-A) ---- */
+const BLO_NAMES = {
+  1: "KHUSHBOO",
+  2: "KALLU RAM MEENA",
+  3: "SARDAR SINGH MEENA",
+  4: "RAJENDRA KUMAR MEENA",
+  5: "BHISHAM YADAV",
+  6: "ROHIT",
+  7: "MAHESH",
+  8: "AMANDEEP KAUR",
+  9: "VINOD KUMAR MEENA",
+  10: "USHA RAUCHHIYA",
+  11: "KALPANA SINGH",
+  12: "PRITOSH KUMAR",
+  13: "JITENDRA KUMAR DUHARIYA",
+  14: "AARTI",
+  15: "OM PRAKASH MEENA",
+  16: "JASWANT SINGH",
+  17: "AMIT SHOKEEN",
+  18: "PRADEEP KUMAR MEENA",
+  19: "SUMER SINGH MEENA",
+  20: "NAVEEN PRATAP SINGH",
+  21: "SACHIN KUMAR",
+  22: "KALU RAM MEENA",
+  23: "MALKESH MEENA",
+  24: "BHARTI",
+  25: "LALCHAND",
+  26: "MEENAKSHI MEENA",
+  27: "SAPNA MANCHANDA",
+  28: "RITA KUMARI",
+  29: "SUMAN TANWER",
+  30: "BHAGIRATH SINGH RAJAWAT",
+  31: "POOJA GUPTA",
+  32: "RAJEEV SINGH",
+  33: "KRISHNA",
+  34: "RAMESH KUMAR PANNU",
+  35: "FARIDA",
+  36: "MAHENDAR KUMAR BUNKER",
+  37: "PUSHPA",
+  38: "SUNIL",
+  39: "RAJVIR SINGH",
+  40: "RAKESH KUMAR",
+  41: "KAMAL JIT",
+  42: "MADHU SIROHI",
+  43: "SIDDHI VASISHTHA",
+  44: "JITENDRA KUMAR MEENA",
+  45: "JYOTI",
+  46: "VIKAS",
+  47: "AKUL KUMAR BHATT",
+  48: "SANJAY KUMAR",
+  49: "MANJU DEVI",
+  50: "SUNIL KUMAR",
+  51: "MANOJ KUMAR CHAURASIA",
+  52: "HUKAM SINGH MEENA",
+  53: "JUHI",
+  54: "KAMAL KISHOR MEENA",
+  55: "RAJESH YADAV",
+  56: "MANOJ KUMAR MEENA",
+  57: "ASHWANI",
+  58: "SAVITA",
+  59: "RAM KRISHAN CHAURASIYA",
+  60: "SARITA DEVI",
+  61: "PINKI",
+  62: "PRASHANT CHAUDHARY",
+  63: "AMIT PANDEY",
+  64: "SURENDRA SONTHWAL",
+  65: "ANJALI",
+  66: "YASHPAL GAHNOLIYA",
+  67: "MANINDER PAL SINGH",
+  68: "SURESH CHAND",
+  69: "NEERAJ",
+  70: "ANJALI CHAURASIA",
+  71: "HITENDER DUTT GAUTAM",
+  72: "MAHENDRA JAKHAR",
+  73: "DEEPCHANDRA",
+  74: "SANJIV SHARMA",
+  75: "VIKAS MEHRA",
+  76: "AMAN KUMAR",
+  77: "LEELA BHATT",
+  78: "CHIRAG",
+  79: "ANIL KUMAR",
+  80: "CHANDAN KUMAR SINGH",
+  81: "AARTI",
+  82: "KULDEEP SHARMA",
+  83: "MADHU BALA",
+  84: "DHARMENDER YADAV",
+  85: "LAXMI KANT",
+  86: "KAMAL KANT",
+  87: "NEHA",
+  88: "USHA RANI",
+  89: "RAJENDRA PRASAD",
+  90: "SATYA NARAYAN",
+  91: "DHARMNATH CHAUDHARY",
+  92: "ABHISHEK KUMAR",
+  93: "MAUSAM DEVI",
+  94: "DEV VRAT ARYA",
+  95: "KISHOR NATH JHA",
+  96: "USHA BIRMHAN",
+  97: "RAVINDER",
+  98: "SHRIPAL",
+  99: "DEEPAK KUMAR MEENA",
+  100: "PRADEEP KUMAR",
+  101: "KULDEEP MEENA",
+  102: "SUSHIL",
+  103: "Ramhet Lal Meena",
+  104: "MUKESH KUMAR YADAV",
+  105: "VISHNU",
+  106: "JAGDISH KUMAR",
+  107: "SWATI MISHRA",
+  108: "SAPNA RANI MEENA",
+  109: "KAVITA GARG",
+  110: "GEETA NEGI",
+  111: "NOOR MOHMAD",
+  112: "NISHI VASHISHT",
+  113: "ANUBHUTI",
+  114: "MONICA",
+  115: "KANIKA NAGPAL ARORA",
+  116: "TAJENDER SINGH",
+  117: "JASVINDER KAUR",
+  118: "SHILPA TYAGI",
+  119: "SUNITA",
+  120: "ANJU SINGH",
+  121: "MANMEET KAUR",
+  122: "HEMRAJ",
+  123: "AARTI BAWEJA",
+  124: "ANIL KUMAR SINGH",
+  125: "GURWINDER SINGH",
+  126: "MANISHA GUPTA",
+  127: "ANUBHA OBEROI",
+  128: "PUNEETA SEHGAL",
+  129: "KAMLESH BODWAL",
+  130: "SAROJ KUMARI",
+  131: "NARESH KUMAR BUNKAR",
+  132: "AJAI KUMAR",
+  133: "MAHESH KUMAR",
+  134: "KHUSHI RAM MEENA",
+  135: "PANKAJ KUMAR",
+  136: "ANITA KUMARI",
+  137: "SURAJ PRASAD",
+  138: "MAMTA",
+  139: "MUKUL KUMAR",
+  140: "KARAN RATAWAL",
+  141: "SHAKUNTLA",
+  142: "SUNIL KUMAR.",
+  143: "ANIL KUMAR BHATI",
+  144: "ASHISH TIWARI",
+  145: "ROSHAN KUMAR",
+  146: "SURAJ PRAKASH",
+  147: "MRATYUNJAY SINGH",
+  148: "MANMOHAN KAUR",
+  149: "NIKITA",
+  150: "KAVITA SRIVASTAVA",
+  151: "NEERU RANI",
+  152: "SHEKINA PRIYA MARPU",
+  153: "SHIKHA RANI MEHRA",
+  154: "BRAHM DUTT",
+  155: "DEEPESH",
+  156: "DR. SHARWAN KUMAR MEGHWAL",
+  157: "ARVIND KUMAR",
+  158: "RAJU SINGH",
+  159: "ANJU TRIPATHI",
+  160: "SEEMA RANI",
+  161: "HUKAMCHAND",
+  162: "RUSAVA CHAITANYA ROUT",
+  163: "SANGEETA LAKRA",
+  164: "SWAPAN MALA",
+  165: "MD NIYAZ ALAM",
+  166: "SUNITA JALUTHARIYA",
+  167: "HARPREET KAUR",
+  168: "SULEKHA",
+  169: "SAROJ DEVI UPADHYAYA",
+  170: "ASHA DEVI",
+  171: "SUNITA SINGH CHAUHAN",
+  172: "PUSHPENDER",
+  173: "ANNU",
+  174: "INDER SINGH",
+  175: "ANUP SINGH",
+  176: "NEHA SHARMA",
+  177: "RACHNA BUSSI",
+  178: "PRABHJOT KAUR",
+  179: "NAVRINDER SINGH",
+  180: "OMWATI",
+  181: "MADHO LAL MEENA",
+  182: "DAVINDERJIT KAUR",
+  183: "ANUBHA",
+  184: "SANGITA SHARMA",
+  185: "INDERJEET",
+  186: "MAMTA RANI",
+  187: "ROSHAN LAL",
+  188: "MEENU GUPTA",
+  189: "URMILA",
+  190: "ANKIT YADAV",
+};
+
 const supervisorSelect = document.getElementById("supervisor");
 const rangeHint = document.getElementById("rangeHint");
 const bloList = document.getElementById("blo-list");
@@ -774,18 +968,18 @@ displayBtn.addEventListener("click", async () => {
     }
 
     let totalGen = 0, totalDel = 0;
-    const aoa = [["Date", "Supervisor", "PS Number", "Notices Generated", "Notices Delivered"]];
+    const aoa = [["Date", "Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered"]];
     entries.forEach((e) => {
       const g = Number(e.generated) || 0;
       const d = Number(e.delivered) || 0;
       totalGen += g;
       totalDel += d;
-      aoa.push([dateVal, e.supervisor, e.ps, g, d]);
+      aoa.push([dateVal, e.supervisor, e.ps, BLO_NAMES[e.ps] || "", g, d]);
     });
-    aoa.push(["", "Total", "", totalGen, totalDel]);
+    aoa.push(["", "Total", "", "", totalGen, totalDel]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 10 }, { wch: 20 }, { wch: 20 }];
+    ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 10 }, { wch: 24 }, { wch: 20 }, { wch: 20 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Entries");
     XLSX.writeFile(wb, `BLO_Notices_${dateVal}.xlsx`);
@@ -860,18 +1054,18 @@ downloadAllBtn.addEventListener("click", async () => {
     }
 
     let totalGen = 0, totalDel = 0;
-    const aoa = [["Date", "Supervisor", "PS Number", "Notices Generated", "Notices Delivered"]];
+    const aoa = [["Date", "Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered"]];
     entries.forEach((e) => {
       const g = Number(e.generated) || 0;
       const d = Number(e.delivered) || 0;
       totalGen += g;
       totalDel += d;
-      aoa.push([e.date, e.supervisor, e.ps, g, d]);
+      aoa.push([e.date, e.supervisor, e.ps, BLO_NAMES[e.ps] || "", g, d]);
     });
-    aoa.push(["", "Total", "", totalGen, totalDel]);
+    aoa.push(["", "Total", "", "", totalGen, totalDel]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 10 }, { wch: 20 }, { wch: 20 }];
+    ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 10 }, { wch: 24 }, { wch: 20 }, { wch: 20 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "All Entries");
     const stamp = today.iso;
