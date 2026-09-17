@@ -374,6 +374,36 @@
     color:var(--ink-soft);
     margin-bottom:10px;
   }
+  .pending-list{
+    list-style:none;
+    margin:0;
+    padding:0;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .pending-list li{
+    padding:9px 12px;
+    font-size:13.5px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    justify-content:space-between;
+  }
+  .pending-list li:last-child{border-bottom:none;}
+  .pending-list li span.range{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+    color:var(--ink-soft);
+  }
+  .all-done{
+    font-size:14px;
+    color:var(--good);
+    font-weight:600;
+    padding:16px;
+    text-align:center;
+    background:var(--good-bg);
+    border-radius:var(--radius);
+  }
 </style>
 </head>
 <body>
@@ -455,6 +485,7 @@
         <input type="date" id="adminDate" />
       </div>
       <button type="button" id="displayBtn">Display</button>
+      <button type="button" id="pendingBtn">Show Pending</button>
     </div>
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
@@ -694,6 +725,7 @@ const adminOverlay = document.getElementById("adminOverlay");
 const closeAdminBtn = document.getElementById("closeAdminBtn");
 const adminDate = document.getElementById("adminDate");
 const displayBtn = document.getElementById("displayBtn");
+const pendingBtn = document.getElementById("pendingBtn");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
 const adminResultsWrap = document.getElementById("adminResultsWrap");
 
@@ -764,6 +796,46 @@ displayBtn.addEventListener("click", async () => {
   } finally {
     displayBtn.disabled = false;
     displayBtn.textContent = "Display";
+  }
+});
+
+pendingBtn.addEventListener("click", async () => {
+  const dateVal = adminDate.value;
+  if (!dateVal) return;
+
+  pendingBtn.disabled = true;
+  pendingBtn.textContent = "Checking…";
+  adminResultsWrap.innerHTML = "";
+
+  try {
+    const url = SCRIPT_URL + "?date=" + encodeURIComponent(dateVal);
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data || data.ok === false) {
+      throw new Error((data && data.error) || "Unknown error");
+    }
+
+    const entries = data.entries || [];
+    const submittedNames = new Set(entries.map((e) => e.supervisor));
+    const pending = SUPERVISORS.filter((s) => !submittedNames.has(s.name));
+
+    if (pending.length === 0) {
+      adminResultsWrap.innerHTML = `<div class="all-done">All 19 supervisors have submitted for ${dateVal}.</div>`;
+    } else {
+      const itemsHtml = pending.map((s) =>
+        `<li>${s.name}<span class="range">PS ${s.start}–${s.start + 9}</span></li>`
+      ).join("");
+      adminResultsWrap.innerHTML = `
+        <div class="admin-summary">${pending.length} of ${SUPERVISORS.length} supervisors have NOT submitted for ${dateVal}:</div>
+        <ul class="pending-list">${itemsHtml}</ul>
+      `;
+    }
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not check. Check your connection and try again.</div>`;
+  } finally {
+    pendingBtn.disabled = false;
+    pendingBtn.textContent = "Show Pending";
   }
 });
 
