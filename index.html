@@ -21,6 +21,8 @@
     --good-bg: #eaf3ec;
     --warn: #a3441f;
     --warn-bg: #fbeee7;
+    --danger: #c0392b;
+    --danger-bg: #fdecea;
     --white: #ffffff;
     --radius: 3px;
   }
@@ -153,11 +155,27 @@
   }
   .pair .field{margin-bottom:0;}
   .pair label{font-weight:500; font-size:12.5px; color:var(--ink-soft);}
-  .mismatch input{border-color:var(--warn); background:var(--warn-bg);}
+  .mismatch input{border-color:var(--danger); background:var(--danger-bg);}
   .mismatch-note{
-    font-size:11.5px;
-    color:var(--warn);
-    margin-top:5px;
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--danger);
+    margin-top:6px;
+  }
+  .validation-banner{
+    max-width:640px;
+    margin:0 auto 14px;
+    padding:0 16px;
+  }
+  .validation-banner-inner{
+    background:var(--danger-bg);
+    color:var(--danger);
+    border:1.5px solid var(--danger);
+    border-radius:var(--radius);
+    padding:13px 15px;
+    font-size:14px;
+    font-weight:600;
+    line-height:1.5;
   }
 
   .submit-bar{
@@ -439,6 +457,10 @@
     Generated total: <b id="totGen">0</b>&nbsp;&nbsp;·&nbsp;&nbsp;Delivered total: <b id="totDel">0</b>
   </div>
 </main>
+
+<div class="validation-banner hidden" id="validationBanner">
+  <div class="validation-banner-inner">⚠ Notices generated can never be less than notices delivered. Please fix the highlighted BLO(s) below before submitting.</div>
+</div>
 
 <div class="submit-bar">
   <button id="submitBtn" disabled>Select your name to continue</button>
@@ -726,6 +748,7 @@ const dateDisplay = document.getElementById("dateDisplay");
 const totalsBar = document.getElementById("totalsBar");
 const totGenEl = document.getElementById("totGen");
 const totDelEl = document.getElementById("totDel");
+const validationBanner = document.getElementById("validationBanner");
 
 /* Populate supervisor dropdown */
 SUPERVISORS.forEach((s, i) => {
@@ -770,7 +793,7 @@ function buildBloRows(supervisor) {
           <input type="number" min="0" step="1" inputmode="numeric" class="del" value="0" />
         </div>
       </div>
-      <div class="mismatch-note hidden">Delivered exceeds generated — please check.</div>
+      <div class="mismatch-note hidden">⚠ Notices generated can never be less than notices delivered.</div>
     `;
     bloList.appendChild(row);
   });
@@ -779,6 +802,7 @@ function buildBloRows(supervisor) {
   totalsBar.classList.remove("hidden");
   wireValidation();
   updateTotals();
+  updateSubmitAvailability();
 }
 
 function wireValidation() {
@@ -794,10 +818,32 @@ function wireValidation() {
       del.parentElement.classList.toggle("mismatch", bad);
       note.classList.toggle("hidden", !bad);
       updateTotals();
+      updateSubmitAvailability();
     };
     gen.addEventListener("input", check);
     del.addEventListener("input", check);
   });
+}
+
+function hasAnyMismatch() {
+  return Array.from(bloList.querySelectorAll(".blo-row")).some((row) => {
+    const g = Number(row.querySelector(".gen").value) || 0;
+    const d = Number(row.querySelector(".del").value) || 0;
+    return d > g;
+  });
+}
+
+function updateSubmitAvailability() {
+  if (supervisorSelect.value === "") return;
+  if (hasAnyMismatch()) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Fix highlighted fields to continue";
+    validationBanner.classList.remove("hidden");
+  } else {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Save today's entry";
+    validationBanner.classList.add("hidden");
+  }
 }
 
 function updateTotals() {
@@ -818,6 +864,7 @@ supervisorSelect.addEventListener("change", () => {
   buildBloRows(supervisor);
   submitBtn.disabled = false;
   submitBtn.textContent = "Save today's entry";
+  validationBanner.classList.add("hidden");
   hideBanner();
 });
 
@@ -833,6 +880,13 @@ function hideBanner() {
 submitBtn.addEventListener("click", async () => {
   const idx = supervisorSelect.value;
   if (idx === "") return;
+
+  if (hasAnyMismatch()) {
+    updateSubmitAvailability();
+    validationBanner.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+
   const supervisor = SUPERVISORS[idx];
 
   const blos = [];
