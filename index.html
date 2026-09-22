@@ -381,6 +381,14 @@
     font-weight:600;
     background:var(--paper);
   }
+  .pct-cell{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:600;
+    text-align:right;
+  }
+  .pct-red{ background:var(--danger-bg); color:var(--danger); }
+  .pct-yellow{ background:#fdf3d0; color:#8a6d1a; }
+  .pct-green{ background:var(--good-bg); color:var(--good); }
   .admin-empty{
     font-size:13px;
     color:var(--ink-soft);
@@ -509,6 +517,8 @@
       <button type="button" id="displayBtn">Display</button>
       <button type="button" id="pendingBtn">Show Pending</button>
     </div>
+
+    <button type="button" class="secondary" id="finalReportBtn" style="margin-bottom:16px;">Show Final Filtered Report (Today)</button>
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
 
@@ -974,6 +984,7 @@ const closeAdminBtn = document.getElementById("closeAdminBtn");
 const adminDate = document.getElementById("adminDate");
 const displayBtn = document.getElementById("displayBtn");
 const pendingBtn = document.getElementById("pendingBtn");
+const finalReportBtn = document.getElementById("finalReportBtn");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
 const adminResultsWrap = document.getElementById("adminResultsWrap");
 
@@ -1084,6 +1095,67 @@ pendingBtn.addEventListener("click", async () => {
   } finally {
     pendingBtn.disabled = false;
     pendingBtn.textContent = "Show Pending";
+  }
+});
+
+finalReportBtn.addEventListener("click", async () => {
+  const dateVal = today.iso; // always today's date, regardless of the date picker
+
+  finalReportBtn.disabled = true;
+  finalReportBtn.textContent = "Loading…";
+  adminResultsWrap.innerHTML = "";
+
+  try {
+    const url = SCRIPT_URL + "?date=" + encodeURIComponent(dateVal);
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data || data.ok === false) {
+      throw new Error((data && data.error) || "Unknown error");
+    }
+
+    const entries = data.entries || [];
+    if (entries.length === 0) {
+      adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${dateVal}) yet.</div>`;
+      return;
+    }
+
+    const withPct = entries.map((e) => {
+      const g = Number(e.generated) || 0;
+      const d = Number(e.delivered) || 0;
+      const pct = g > 0 ? (d / g) * 100 : 0;
+      return { ...e, generated: g, delivered: d, pct };
+    });
+    withPct.sort((a, b) => a.pct - b.pct); // ascending
+
+    const rowsHtml = withPct.map((e) => {
+      const pctClass = e.pct < 10 ? "pct-red" : (e.pct > 25 ? "pct-green" : "pct-yellow");
+      return `<tr>
+        <td>${e.supervisor}</td>
+        <td>${e.ps}</td>
+        <td>${BLO_NAMES[e.ps] || ""}</td>
+        <td>${e.generated}</td>
+        <td>${e.delivered}</td>
+        <td class="pct-cell ${pctClass}">${e.pct.toFixed(1)}%</td>
+      </tr>`;
+    }).join("");
+
+    adminResultsWrap.innerHTML = `
+      <div class="admin-summary">Final filtered report for today (${dateVal}) — sorted by % delivered, ascending. Red &lt;10% · Yellow 10–25% · Green &gt;25%.</div>
+      <div class="admin-results">
+        <table class="results-table">
+          <thead>
+            <tr><th>Supervisor</th><th>PS</th><th>BLO Name</th><th>Generated</th><th>Delivered</th><th>%</th></tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
+  } finally {
+    finalReportBtn.disabled = false;
+    finalReportBtn.textContent = "Show Final Filtered Report (Today)";
   }
 });
 
