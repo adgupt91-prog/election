@@ -1146,6 +1146,19 @@ finalReportBtn.addEventListener("click", async () => {
     });
     withPct.sort((a, b) => a.pct - b.pct); // ascending
 
+    // RED = below the selected threshold. GREEN = the top 10% of whatever's
+    // left after red is removed (highest % among the non-red rows).
+    // Everything else is YELLOW.
+    const threshold = Number(redThreshold.value) || 10;
+    const redSet = new Set();
+    const nonRed = [];
+    withPct.forEach((e) => {
+      if (e.pct < threshold) redSet.add(e); else nonRed.push(e);
+    });
+    const nonRedByPctDesc = [...nonRed].sort((a, b) => b.pct - a.pct);
+    const greenCount = Math.ceil(nonRedByPctDesc.length * 0.10);
+    const greenSet = new Set(nonRedByPctDesc.slice(0, greenCount));
+
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Final Report");
     sheet.columns = [
@@ -1179,8 +1192,7 @@ finalReportBtn.addEventListener("click", async () => {
       row.eachCell((cell) => { cell.border = THIN_BORDER; });
 
       const pctCell = row.getCell("pct");
-      const threshold = Number(redThreshold.value) || 10;
-      const fillColor = e.pct < threshold ? "FFF5B7B1" : (e.pct > 25 ? "FFA9DFBF" : "FFF9E79F");
+      const fillColor = redSet.has(e) ? "FFF5B7B1" : (greenSet.has(e) ? "FFA9DFBF" : "FFF9E79F");
       pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
       pctCell.font = { bold: true };
       pctCell.alignment = { horizontal: "right" };
