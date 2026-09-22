@@ -1137,9 +1137,18 @@ finalReportBtn.addEventListener("click", async () => {
       { header: "BLO Name", key: "bloName", width: 24 },
       { header: "Notices Generated", key: "generated", width: 18 },
       { header: "Notices Delivered", key: "delivered", width: 18 },
-      { header: "Percentage", key: "pct", width: 12 },
+      { header: "Percentage", key: "pct", width: 14 },
     ];
     sheet.getRow(1).font = { bold: true };
+
+    const THIN_BORDER = {
+      top: { style: "thin", color: { argb: "FF8C8578" } },
+      left: { style: "thin", color: { argb: "FF8C8578" } },
+      bottom: { style: "thin", color: { argb: "FF8C8578" } },
+      right: { style: "thin", color: { argb: "FF8C8578" } },
+    };
+    // Border the header row too.
+    sheet.getRow(1).eachCell((cell) => { cell.border = THIN_BORDER; });
 
     withPct.forEach((e) => {
       const row = sheet.addRow({
@@ -1148,12 +1157,15 @@ finalReportBtn.addEventListener("click", async () => {
         bloName: BLO_NAMES[e.ps] || "",
         generated: e.generated,
         delivered: e.delivered,
-        pct: Number(e.pct.toFixed(1)),
+        pct: e.pct.toFixed(1) + "%",
       });
+      row.eachCell((cell) => { cell.border = THIN_BORDER; });
+
       const pctCell = row.getCell("pct");
-      const fillColor = e.pct < 10 ? "FFFDECEA" : (e.pct > 25 ? "FFEAF3EC" : "FFFDF3D0");
+      const fillColor = e.pct < 10 ? "FFF5B7B1" : (e.pct > 25 ? "FFA9DFBF" : "FFF9E79F");
       pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
       pctCell.font = { bold: true };
+      pctCell.alignment = { horizontal: "right" };
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
