@@ -519,7 +519,23 @@
       <button type="button" id="pendingBtn">Show Pending</button>
     </div>
 
-    <button type="button" class="secondary" id="finalReportBtn" style="margin-bottom:16px;">Show Final Filtered Report (Today)</button>
+    <div class="admin-toolbar" style="margin-bottom:16px;">
+      <div class="field">
+        <label for="redThreshold">Mark RED if below</label>
+        <select id="redThreshold">
+          <option value="10" selected>Less than 10%</option>
+          <option value="20">Less than 20%</option>
+          <option value="30">Less than 30%</option>
+          <option value="40">Less than 40%</option>
+          <option value="50">Less than 50%</option>
+          <option value="60">Less than 60%</option>
+          <option value="70">Less than 70%</option>
+          <option value="80">Less than 80%</option>
+          <option value="90">Less than 90%</option>
+        </select>
+      </div>
+      <button type="button" id="finalReportBtn">Show Final Filtered Report (Today)</button>
+    </div>
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
 
@@ -986,6 +1002,7 @@ const adminDate = document.getElementById("adminDate");
 const displayBtn = document.getElementById("displayBtn");
 const pendingBtn = document.getElementById("pendingBtn");
 const finalReportBtn = document.getElementById("finalReportBtn");
+const redThreshold = document.getElementById("redThreshold");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
 const adminResultsWrap = document.getElementById("adminResultsWrap");
 
@@ -1162,7 +1179,8 @@ finalReportBtn.addEventListener("click", async () => {
       row.eachCell((cell) => { cell.border = THIN_BORDER; });
 
       const pctCell = row.getCell("pct");
-      const fillColor = e.pct < 10 ? "FFF5B7B1" : (e.pct > 25 ? "FFA9DFBF" : "FFF9E79F");
+      const threshold = Number(redThreshold.value) || 10;
+      const fillColor = e.pct < threshold ? "FFF5B7B1" : (e.pct > 25 ? "FFA9DFBF" : "FFF9E79F");
       pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
       pctCell.font = { bold: true };
       pctCell.alignment = { horizontal: "right" };
