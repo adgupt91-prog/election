@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
   :root{
     --navy: #16324f;
@@ -1128,29 +1129,44 @@ finalReportBtn.addEventListener("click", async () => {
     });
     withPct.sort((a, b) => a.pct - b.pct); // ascending
 
-    const rowsHtml = withPct.map((e) => {
-      const pctClass = e.pct < 10 ? "pct-red" : (e.pct > 25 ? "pct-green" : "pct-yellow");
-      return `<tr>
-        <td>${e.supervisor}</td>
-        <td>${e.ps}</td>
-        <td>${BLO_NAMES[e.ps] || ""}</td>
-        <td>${e.generated}</td>
-        <td>${e.delivered}</td>
-        <td class="pct-cell ${pctClass}">${e.pct.toFixed(1)}%</td>
-      </tr>`;
-    }).join("");
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Final Report");
+    sheet.columns = [
+      { header: "Supervisor", key: "supervisor", width: 26 },
+      { header: "PS Number", key: "ps", width: 10 },
+      { header: "BLO Name", key: "bloName", width: 24 },
+      { header: "Notices Generated", key: "generated", width: 18 },
+      { header: "Notices Delivered", key: "delivered", width: 18 },
+      { header: "Percentage", key: "pct", width: 12 },
+    ];
+    sheet.getRow(1).font = { bold: true };
 
-    adminResultsWrap.innerHTML = `
-      <div class="admin-summary">Final filtered report for today (${dateVal}) — sorted by % delivered, ascending. Red &lt;10% · Yellow 10–25% · Green &gt;25%.</div>
-      <div class="admin-results">
-        <table class="results-table">
-          <thead>
-            <tr><th>Supervisor</th><th>PS</th><th>BLO Name</th><th>Generated</th><th>Delivered</th><th>%</th></tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-      </div>
-    `;
+    withPct.forEach((e) => {
+      const row = sheet.addRow({
+        supervisor: e.supervisor,
+        ps: e.ps,
+        bloName: BLO_NAMES[e.ps] || "",
+        generated: e.generated,
+        delivered: e.delivered,
+        pct: Number(e.pct.toFixed(1)),
+      });
+      const pctCell = row.getCell("pct");
+      const fillColor = e.pct < 10 ? "FFFDECEA" : (e.pct > 25 ? "FFEAF3EC" : "FFFDF3D0");
+      pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+      pctCell.font = { bold: true };
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `BLO_Final_Filtered_Report_${dateVal}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded final filtered report for today (${dateVal}) — ${withPct.length} entries, sorted by % delivered.</div>`;
   } catch (err) {
     adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
   } finally {
