@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --navy: #16324f;
@@ -1159,17 +1161,25 @@ finalReportBtn.addEventListener("click", async () => {
     const greenCount = Math.ceil(nonRedByPctDesc.length * 0.10);
     const greenSet = new Set(nonRedByPctDesc.slice(0, greenCount));
 
+    const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const [ty, tm, td] = dateVal.split("-").map(Number);
+    const titleDateStr = `${td} ${MONTHS[tm - 1]} ${ty}`;
+    const reportTitle = `${titleDateStr}, BLO NOTICE DELIVERY REPORT`;
+
+    const RED_HEX = "FFF5B7B1", GREEN_HEX = "FFA9DFBF", YELLOW_HEX = "FFF9E79F";
+    const LARGE_COLS = new Set(["ps", "bloName", "pct"]);
+
+    /* ---------- Build the .xlsx ---------- */
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Final Report");
     sheet.columns = [
       { header: "Supervisor", key: "supervisor", width: 26 },
-      { header: "PS Number", key: "ps", width: 10 },
-      { header: "BLO Name", key: "bloName", width: 24 },
+      { header: "PS Number", key: "ps", width: 12 },
+      { header: "BLO Name", key: "bloName", width: 26 },
       { header: "Notices Generated", key: "generated", width: 18 },
       { header: "Notices Delivered", key: "delivered", width: 18 },
       { header: "Percentage", key: "pct", width: 14 },
     ];
-    sheet.getRow(1).font = { bold: true };
 
     const THIN_BORDER = {
       top: { style: "thin", color: { argb: "FF8C8578" } },
@@ -1177,8 +1187,14 @@ finalReportBtn.addEventListener("click", async () => {
       bottom: { style: "thin", color: { argb: "FF8C8578" } },
       right: { style: "thin", color: { argb: "FF8C8578" } },
     };
-    // Border the header row too.
-    sheet.getRow(1).eachCell((cell) => { cell.border = THIN_BORDER; });
+
+    // Header row (currently row 1) — bold, centered, larger font on PS/BLO Name/Percentage.
+    sheet.getRow(1).eachCell((cell, colNumber) => {
+      cell.border = THIN_BORDER;
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      const key = sheet.columns[colNumber - 1].key;
+      cell.font = { bold: true, size: LARGE_COLS.has(key) ? 13 : 11 };
+    });
 
     withPct.forEach((e) => {
       const row = sheet.addRow({
@@ -1189,26 +1205,90 @@ finalReportBtn.addEventListener("click", async () => {
         delivered: e.delivered,
         pct: e.pct.toFixed(1) + "%",
       });
-      row.eachCell((cell) => { cell.border = THIN_BORDER; });
+      row.eachCell((cell, colNumber) => {
+        cell.border = THIN_BORDER;
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        const key = sheet.columns[colNumber - 1].key;
+        cell.font = { bold: true, size: LARGE_COLS.has(key) ? 13 : 11 };
+      });
 
       const pctCell = row.getCell("pct");
-      const fillColor = redSet.has(e) ? "FFF5B7B1" : (greenSet.has(e) ? "FFA9DFBF" : "FFF9E79F");
+      const fillColor = redSet.has(e) ? RED_HEX : (greenSet.has(e) ? GREEN_HEX : YELLOW_HEX);
       pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
-      pctCell.font = { bold: true };
-      pctCell.alignment = { horizontal: "right" };
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `BLO_Final_Filtered_Report_${dateVal}.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+    // Title row — inserted at the top last, so it doesn't disturb the
+    // header/data rows already built above; everything shifts down by one.
+    sheet.insertRow(1, [reportTitle]);
+    sheet.mergeCells(1, 1, 1, 6);
+    const titleCell = sheet.getCell("A1");
+    titleCell.font = { bold: true, size: 15 };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
+    titleCell.border = THIN_BORDER;
+    sheet.getRow(1).height = 24;
 
-    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded final filtered report for today (${dateVal}) — ${withPct.length} entries, sorted by % delivered.</div>`;
+    const xlsxBuffer = await workbook.xlsx.writeBuffer();
+    const xlsxBlob = new Blob([xlsxBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const xlsxLink = document.createElement("a");
+    xlsxLink.href = URL.createObjectURL(xlsxBlob);
+    xlsxLink.download = `BLO_Final_Filtered_Report_${dateVal}.xlsx`;
+    document.body.appendChild(xlsxLink);
+    xlsxLink.click();
+    document.body.removeChild(xlsxLink);
+    URL.revokeObjectURL(xlsxLink.href);
+
+    /* ---------- Build the matching .pdf ---------- */
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(reportTitle, pageWidth / 2, 32, { align: "center" });
+
+    const RED_RGB = [245, 183, 177], GREEN_RGB = [169, 223, 184], YELLOW_RGB = [249, 231, 159];
+    const bodyRows = withPct.map((e) => [
+      e.supervisor, e.ps, BLO_NAMES[e.ps] || "", e.generated, e.delivered, e.pct.toFixed(1) + "%",
+    ]);
+
+    doc.autoTable({
+      head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Percentage"]],
+      body: bodyRows,
+      startY: 48,
+      styles: {
+        halign: "center",
+        valign: "middle",
+        fontStyle: "bold",
+        lineWidth: 0.5,
+        lineColor: [140, 133, 120],
+        fontSize: 8,
+      },
+      headStyles: {
+        fillColor: [22, 50, 79],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9,
+      },
+      columnStyles: {
+        1: { fontSize: 10 }, // PS Number — larger
+        2: { fontSize: 10 }, // BLO Name — larger
+        5: { fontSize: 10 }, // Percentage — larger
+      },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 5) {
+          const entry = withPct[data.row.index];
+          data.cell.styles.fillColor = redSet.has(entry) ? RED_RGB : (greenSet.has(entry) ? GREEN_RGB : YELLOW_RGB);
+        }
+      },
+    });
+
+    // Small delay before the second download so the browser doesn't treat
+    // two triggered downloads from one click as a blocked popup burst.
+    setTimeout(() => {
+      doc.save(`BLO_Final_Filtered_Report_${dateVal}.pdf`);
+    }, 400);
+
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded final filtered report for today (${dateVal}) as .xlsx and .pdf — ${withPct.length} entries, sorted by % delivered.</div>`;
   } catch (err) {
     adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
   } finally {
