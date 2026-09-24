@@ -1239,7 +1239,7 @@ finalReportBtn.addEventListener("click", async () => {
 
     /* ---------- Build the matching .pdf ---------- */
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
 
     doc.setFont("helvetica", "bold");
