@@ -1306,10 +1306,10 @@ function downloadPdfByPS(rd) {
     },
     columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 5: { fontSize: 10 } },
     didParseCell: (data) => {
-      if (data.section === "body" && data.column.index === 5) {
+      if (data.section === "body") {
         const entry = byPS[data.row.index];
         if (redSet.has(entry)) {
-          data.cell.styles.fillColor = RED_RGB; // only RED is ever applied here — no yellow, no green
+          data.cell.styles.fillColor = RED_RGB; // whole row red — no yellow, no green anywhere
         }
       }
     },
