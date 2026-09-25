@@ -536,7 +536,12 @@
           <option value="90">Less than 90%</option>
         </select>
       </div>
-      <button type="button" id="finalReportBtn">Show Final Filtered Report (Today)</button>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+      <button type="button" class="secondary" id="downloadExcelBtn">Download Excel Report (Sorted by %)</button>
+      <button type="button" class="secondary" id="downloadPdfPctBtn">Download PDF Report (Sorted by %)</button>
+      <button type="button" class="secondary" id="downloadPdfPSBtn">Download PDF Report (PS-Wise, Red Only)</button>
     </div>
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
@@ -1003,7 +1008,9 @@ const closeAdminBtn = document.getElementById("closeAdminBtn");
 const adminDate = document.getElementById("adminDate");
 const displayBtn = document.getElementById("displayBtn");
 const pendingBtn = document.getElementById("pendingBtn");
-const finalReportBtn = document.getElementById("finalReportBtn");
+const downloadExcelBtn = document.getElementById("downloadExcelBtn");
+const downloadPdfPctBtn = document.getElementById("downloadPdfPctBtn");
+const downloadPdfPSBtn = document.getElementById("downloadPdfPSBtn");
 const redThreshold = document.getElementById("redThreshold");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
 const adminResultsWrap = document.getElementById("adminResultsWrap");
@@ -1118,182 +1125,256 @@ pendingBtn.addEventListener("click", async () => {
   }
 });
 
-finalReportBtn.addEventListener("click", async () => {
+/* Shared by all three report buttons below: fetch today's entries and
+   compute percentage + red/green classification once, reused per file. */
+async function fetchTodayReportData() {
   const dateVal = today.iso; // always today's date, regardless of the date picker
+  const url = SCRIPT_URL + "?date=" + encodeURIComponent(dateVal);
+  const res = await fetch(url);
+  const data = await res.json();
 
-  finalReportBtn.disabled = true;
-  finalReportBtn.textContent = "Loading…";
-  adminResultsWrap.innerHTML = "";
+  if (!data || data.ok === false) {
+    throw new Error((data && data.error) || "Unknown error");
+  }
 
-  try {
-    const url = SCRIPT_URL + "?date=" + encodeURIComponent(dateVal);
-    const res = await fetch(url);
-    const data = await res.json();
+  const entries = data.entries || [];
+  if (entries.length === 0) return null;
 
-    if (!data || data.ok === false) {
-      throw new Error((data && data.error) || "Unknown error");
-    }
+  const withPct = entries.map((e) => {
+    const g = Number(e.generated) || 0;
+    const d = Number(e.delivered) || 0;
+    const pct = g > 0 ? (d / g) * 100 : 0;
+    return { ...e, generated: g, delivered: d, pct };
+  });
+  withPct.sort((a, b) => a.pct - b.pct); // ascending
 
-    const entries = data.entries || [];
-    if (entries.length === 0) {
-      adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${dateVal}) yet.</div>`;
-      return;
-    }
+  // RED = below the selected threshold. GREEN = the top 10% of whatever's
+  // left after red is removed (highest % among the non-red rows).
+  // Everything else is YELLOW.
+  const threshold = Number(redThreshold.value) || 10;
+  const redSet = new Set();
+  const nonRed = [];
+  withPct.forEach((e) => {
+    if (e.pct < threshold) redSet.add(e); else nonRed.push(e);
+  });
+  const nonRedByPctDesc = [...nonRed].sort((a, b) => b.pct - a.pct);
+  const greenCount = Math.ceil(nonRedByPctDesc.length * 0.10);
+  const greenSet = new Set(nonRedByPctDesc.slice(0, greenCount));
 
-    const withPct = entries.map((e) => {
-      const g = Number(e.generated) || 0;
-      const d = Number(e.delivered) || 0;
-      const pct = g > 0 ? (d / g) * 100 : 0;
-      return { ...e, generated: g, delivered: d, pct };
+  const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  const [ty, tm, td] = dateVal.split("-").map(Number);
+  const titleDateStr = `${td} ${MONTHS[tm - 1]} ${ty}`;
+  const reportTitle = `${titleDateStr}, BLO NOTICE DELIVERY REPORT`;
+
+  return { dateVal, withPct, redSet, greenSet, reportTitle };
+}
+
+const RED_HEX = "FFF5B7B1", GREEN_HEX = "FFA9DFBF", YELLOW_HEX = "FFF9E79F";
+const RED_RGB = [245, 183, 177], GREEN_RGB = [169, 223, 184], YELLOW_RGB = [249, 231, 159];
+const LARGE_COLS = new Set(["ps", "bloName", "pct"]);
+const THIN_BORDER = {
+  top: { style: "thin", color: { argb: "FF8C8578" } },
+  left: { style: "thin", color: { argb: "FF8C8578" } },
+  bottom: { style: "thin", color: { argb: "FF8C8578" } },
+  right: { style: "thin", color: { argb: "FF8C8578" } },
+};
+
+async function downloadExcelReport(rd) {
+  const { dateVal, withPct, redSet, greenSet, reportTitle } = rd;
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Final Report");
+  sheet.columns = [
+    { header: "Supervisor", key: "supervisor", width: 26 },
+    { header: "PS Number", key: "ps", width: 12 },
+    { header: "BLO Name", key: "bloName", width: 26 },
+    { header: "Notices Generated", key: "generated", width: 18 },
+    { header: "Notices Delivered", key: "delivered", width: 18 },
+    { header: "Percentage", key: "pct", width: 14 },
+  ];
+
+  sheet.getRow(1).eachCell((cell, colNumber) => {
+    cell.border = THIN_BORDER;
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    const key = sheet.columns[colNumber - 1].key;
+    cell.font = { bold: true, size: LARGE_COLS.has(key) ? 13 : 11 };
+  });
+
+  withPct.forEach((e) => {
+    const row = sheet.addRow({
+      supervisor: e.supervisor,
+      ps: e.ps,
+      bloName: BLO_NAMES[e.ps] || "",
+      generated: e.generated,
+      delivered: e.delivered,
+      pct: e.pct.toFixed(1) + "%",
     });
-    withPct.sort((a, b) => a.pct - b.pct); // ascending
-
-    // RED = below the selected threshold. GREEN = the top 10% of whatever's
-    // left after red is removed (highest % among the non-red rows).
-    // Everything else is YELLOW.
-    const threshold = Number(redThreshold.value) || 10;
-    const redSet = new Set();
-    const nonRed = [];
-    withPct.forEach((e) => {
-      if (e.pct < threshold) redSet.add(e); else nonRed.push(e);
-    });
-    const nonRedByPctDesc = [...nonRed].sort((a, b) => b.pct - a.pct);
-    const greenCount = Math.ceil(nonRedByPctDesc.length * 0.10);
-    const greenSet = new Set(nonRedByPctDesc.slice(0, greenCount));
-
-    const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-    const [ty, tm, td] = dateVal.split("-").map(Number);
-    const titleDateStr = `${td} ${MONTHS[tm - 1]} ${ty}`;
-    const reportTitle = `${titleDateStr}, BLO NOTICE DELIVERY REPORT`;
-
-    const RED_HEX = "FFF5B7B1", GREEN_HEX = "FFA9DFBF", YELLOW_HEX = "FFF9E79F";
-    const LARGE_COLS = new Set(["ps", "bloName", "pct"]);
-
-    /* ---------- Build the .xlsx ---------- */
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Final Report");
-    sheet.columns = [
-      { header: "Supervisor", key: "supervisor", width: 26 },
-      { header: "PS Number", key: "ps", width: 12 },
-      { header: "BLO Name", key: "bloName", width: 26 },
-      { header: "Notices Generated", key: "generated", width: 18 },
-      { header: "Notices Delivered", key: "delivered", width: 18 },
-      { header: "Percentage", key: "pct", width: 14 },
-    ];
-
-    const THIN_BORDER = {
-      top: { style: "thin", color: { argb: "FF8C8578" } },
-      left: { style: "thin", color: { argb: "FF8C8578" } },
-      bottom: { style: "thin", color: { argb: "FF8C8578" } },
-      right: { style: "thin", color: { argb: "FF8C8578" } },
-    };
-
-    // Header row (currently row 1) — bold, centered, larger font on PS/BLO Name/Percentage.
-    sheet.getRow(1).eachCell((cell, colNumber) => {
+    row.eachCell((cell, colNumber) => {
       cell.border = THIN_BORDER;
       cell.alignment = { horizontal: "center", vertical: "middle" };
       const key = sheet.columns[colNumber - 1].key;
       cell.font = { bold: true, size: LARGE_COLS.has(key) ? 13 : 11 };
     });
 
-    withPct.forEach((e) => {
-      const row = sheet.addRow({
-        supervisor: e.supervisor,
-        ps: e.ps,
-        bloName: BLO_NAMES[e.ps] || "",
-        generated: e.generated,
-        delivered: e.delivered,
-        pct: e.pct.toFixed(1) + "%",
-      });
-      row.eachCell((cell, colNumber) => {
-        cell.border = THIN_BORDER;
-        cell.alignment = { horizontal: "center", vertical: "middle" };
-        const key = sheet.columns[colNumber - 1].key;
-        cell.font = { bold: true, size: LARGE_COLS.has(key) ? 13 : 11 };
-      });
+    const pctCell = row.getCell("pct");
+    const fillColor = redSet.has(e) ? RED_HEX : (greenSet.has(e) ? GREEN_HEX : YELLOW_HEX);
+    pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+  });
 
-      const pctCell = row.getCell("pct");
-      const fillColor = redSet.has(e) ? RED_HEX : (greenSet.has(e) ? GREEN_HEX : YELLOW_HEX);
-      pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
-    });
+  sheet.insertRow(1, [reportTitle]);
+  sheet.mergeCells(1, 1, 1, 6);
+  const titleCell = sheet.getCell("A1");
+  titleCell.font = { bold: true, size: 15 };
+  titleCell.alignment = { horizontal: "center", vertical: "middle" };
+  titleCell.border = THIN_BORDER;
+  sheet.getRow(1).height = 24;
 
-    // Title row — inserted at the top last, so it doesn't disturb the
-    // header/data rows already built above; everything shifts down by one.
-    sheet.insertRow(1, [reportTitle]);
-    sheet.mergeCells(1, 1, 1, 6);
-    const titleCell = sheet.getCell("A1");
-    titleCell.font = { bold: true, size: 15 };
-    titleCell.alignment = { horizontal: "center", vertical: "middle" };
-    titleCell.border = THIN_BORDER;
-    sheet.getRow(1).height = 24;
+  const xlsxBuffer = await workbook.xlsx.writeBuffer();
+  const xlsxBlob = new Blob([xlsxBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const xlsxLink = document.createElement("a");
+  xlsxLink.href = URL.createObjectURL(xlsxBlob);
+  xlsxLink.download = `BLO_Final_Filtered_Report_${dateVal}.xlsx`;
+  document.body.appendChild(xlsxLink);
+  xlsxLink.click();
+  document.body.removeChild(xlsxLink);
+  URL.revokeObjectURL(xlsxLink.href);
+}
 
-    const xlsxBuffer = await workbook.xlsx.writeBuffer();
-    const xlsxBlob = new Blob([xlsxBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const xlsxLink = document.createElement("a");
-    xlsxLink.href = URL.createObjectURL(xlsxBlob);
-    xlsxLink.download = `BLO_Final_Filtered_Report_${dateVal}.xlsx`;
-    document.body.appendChild(xlsxLink);
-    xlsxLink.click();
-    document.body.removeChild(xlsxLink);
-    URL.revokeObjectURL(xlsxLink.href);
+function downloadPdfByPercentage(rd) {
+  const { dateVal, withPct, redSet, greenSet, reportTitle } = rd;
 
-    /* ---------- Build the matching .pdf ---------- */
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text(reportTitle, pageWidth / 2, 32, { align: "center" });
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(reportTitle, pageWidth / 2, 32, { align: "center" });
 
-    const RED_RGB = [245, 183, 177], GREEN_RGB = [169, 223, 184], YELLOW_RGB = [249, 231, 159];
-    const bodyRows = withPct.map((e) => [
-      e.supervisor, e.ps, BLO_NAMES[e.ps] || "", e.generated, e.delivered, e.pct.toFixed(1) + "%",
-    ]);
+  const bodyRows = withPct.map((e) => [
+    e.supervisor, e.ps, BLO_NAMES[e.ps] || "", e.generated, e.delivered, e.pct.toFixed(1) + "%",
+  ]);
 
-    doc.autoTable({
-      head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Percentage"]],
-      body: bodyRows,
-      startY: 48,
-      styles: {
-        halign: "center",
-        valign: "middle",
-        fontStyle: "bold",
-        lineWidth: 0.5,
-        lineColor: [140, 133, 120],
-        fontSize: 8,
-      },
-      headStyles: {
-        fillColor: [22, 50, 79],
-        textColor: [255, 255, 255],
-        fontStyle: "bold",
-        fontSize: 9,
-      },
-      columnStyles: {
-        1: { fontSize: 10 }, // PS Number — larger
-        2: { fontSize: 10 }, // BLO Name — larger
-        5: { fontSize: 10 }, // Percentage — larger
-      },
-      didParseCell: (data) => {
-        if (data.section === "body" && data.column.index === 5) {
-          const entry = withPct[data.row.index];
-          data.cell.styles.fillColor = redSet.has(entry) ? RED_RGB : (greenSet.has(entry) ? GREEN_RGB : YELLOW_RGB);
+  doc.autoTable({
+    head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Percentage"]],
+    body: bodyRows,
+    startY: 48,
+    styles: {
+      halign: "center", valign: "middle", fontStyle: "bold",
+      lineWidth: 0.5, lineColor: [140, 133, 120], fontSize: 8,
+    },
+    headStyles: {
+      fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9,
+    },
+    columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 5: { fontSize: 10 } },
+    didParseCell: (data) => {
+      if (data.section === "body" && data.column.index === 5) {
+        const entry = withPct[data.row.index];
+        data.cell.styles.fillColor = redSet.has(entry) ? RED_RGB : (greenSet.has(entry) ? GREEN_RGB : YELLOW_RGB);
+      }
+    },
+  });
+
+  doc.save(`BLO_Final_Filtered_Report_${dateVal}.pdf`);
+}
+
+function downloadPdfByPS(rd) {
+  const { dateVal, withPct, redSet, reportTitle } = rd;
+  const byPS = [...withPct].sort((a, b) => a.ps - b.ps);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(reportTitle, pageWidth / 2, 32, { align: "center" });
+
+  const bodyRowsPS = byPS.map((e) => [
+    e.supervisor, e.ps, BLO_NAMES[e.ps] || "", e.generated, e.delivered, e.pct.toFixed(1) + "%",
+  ]);
+
+  doc.autoTable({
+    head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Percentage"]],
+    body: bodyRowsPS,
+    startY: 48,
+    styles: {
+      halign: "center", valign: "middle", fontStyle: "bold",
+      lineWidth: 0.5, lineColor: [140, 133, 120], fontSize: 8,
+    },
+    headStyles: {
+      fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9,
+    },
+    columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 5: { fontSize: 10 } },
+    didParseCell: (data) => {
+      if (data.section === "body" && data.column.index === 5) {
+        const entry = byPS[data.row.index];
+        if (redSet.has(entry)) {
+          data.cell.styles.fillColor = RED_RGB; // only RED is ever applied here — no yellow, no green
         }
-      },
-    });
+      }
+    },
+  });
 
-    // Small delay before the second download so the browser doesn't treat
-    // two triggered downloads from one click as a blocked popup burst.
-    setTimeout(() => {
-      doc.save(`BLO_Final_Filtered_Report_${dateVal}.pdf`);
-    }, 400);
+  doc.save(`BLO_Report_PS_Wise_${dateVal}.pdf`);
+}
 
-    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded final filtered report for today (${dateVal}) as .xlsx and .pdf — ${withPct.length} entries, sorted by % delivered.</div>`;
+downloadExcelBtn.addEventListener("click", async () => {
+  downloadExcelBtn.disabled = true;
+  downloadExcelBtn.textContent = "Loading…";
+  adminResultsWrap.innerHTML = "";
+  try {
+    const rd = await fetchTodayReportData();
+    if (!rd) {
+      adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${today.iso}) yet.</div>`;
+      return;
+    }
+    await downloadExcelReport(rd);
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded Excel report for today (${rd.dateVal}) — ${rd.withPct.length} entries.</div>`;
   } catch (err) {
     adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
   } finally {
-    finalReportBtn.disabled = false;
-    finalReportBtn.textContent = "Show Final Filtered Report (Today)";
+    downloadExcelBtn.disabled = false;
+    downloadExcelBtn.textContent = "Download Excel Report (Sorted by %)";
+  }
+});
+
+downloadPdfPctBtn.addEventListener("click", async () => {
+  downloadPdfPctBtn.disabled = true;
+  downloadPdfPctBtn.textContent = "Loading…";
+  adminResultsWrap.innerHTML = "";
+  try {
+    const rd = await fetchTodayReportData();
+    if (!rd) {
+      adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${today.iso}) yet.</div>`;
+      return;
+    }
+    downloadPdfByPercentage(rd);
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded PDF report (sorted by %) for today (${rd.dateVal}) — ${rd.withPct.length} entries.</div>`;
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
+  } finally {
+    downloadPdfPctBtn.disabled = false;
+    downloadPdfPctBtn.textContent = "Download PDF Report (Sorted by %)";
+  }
+});
+
+downloadPdfPSBtn.addEventListener("click", async () => {
+  downloadPdfPSBtn.disabled = true;
+  downloadPdfPSBtn.textContent = "Loading…";
+  adminResultsWrap.innerHTML = "";
+  try {
+    const rd = await fetchTodayReportData();
+    if (!rd) {
+      adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${today.iso}) yet.</div>`;
+      return;
+    }
+    downloadPdfByPS(rd);
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded PDF report (PS-wise, red-only) for today (${rd.dateVal}) — ${rd.withPct.length} entries.</div>`;
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
+  } finally {
+    downloadPdfPSBtn.disabled = false;
+    downloadPdfPSBtn.textContent = "Download PDF Report (PS-Wise, Red Only)";
   }
 });
 
