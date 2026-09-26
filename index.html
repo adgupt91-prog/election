@@ -1127,6 +1127,13 @@ pendingBtn.addEventListener("click", async () => {
 
 /* Shared by all three report buttons below: fetch today's entries and
    compute percentage + red/green classification once, reused per file. */
+/* dd-mmm-yyyy for report filenames, e.g. 2026-09-26 -> 26-SEP-2026 */
+function fileDate(iso) {
+  const MON = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  const [y, m, d] = iso.split("-");
+  return `${d}-${MON[Number(m) - 1]}-${y}`;
+}
+
 async function fetchTodayReportData() {
   const dateVal = today.iso; // always today's date, regardless of the date picker
   const url = SCRIPT_URL + "?date=" + encodeURIComponent(dateVal);
@@ -1233,7 +1240,7 @@ async function downloadExcelReport(rd) {
   const xlsxBlob = new Blob([xlsxBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const xlsxLink = document.createElement("a");
   xlsxLink.href = URL.createObjectURL(xlsxBlob);
-  xlsxLink.download = `BLO_Final_Filtered_Report_${dateVal}.xlsx`;
+  xlsxLink.download = `BLO_NOTICE_DELIVERY_REPORT_${fileDate(dateVal)}.xlsx`;
   document.body.appendChild(xlsxLink);
   xlsxLink.click();
   document.body.removeChild(xlsxLink);
@@ -1275,7 +1282,7 @@ function downloadPdfByPercentage(rd) {
     },
   });
 
-  doc.save(`BLO_Final_Filtered_Report_${dateVal}.pdf`);
+  doc.save(`BLO_NOTICE_DELIVERY_REPORT_${fileDate(dateVal)}.pdf`);
 }
 
 function downloadPdfByPS(rd) {
@@ -1315,7 +1322,7 @@ function downloadPdfByPS(rd) {
     },
   });
 
-  doc.save(`BLO_Report_PS_Wise_${dateVal}.pdf`);
+  doc.save(`BLO_NOTICE_REPORT_PS_WISE_${fileDate(dateVal)}.pdf`);
 }
 
 downloadExcelBtn.addEventListener("click", async () => {
