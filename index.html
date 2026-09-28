@@ -541,11 +541,13 @@
     <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
       <button type="button" class="secondary" id="downloadExcelBtn">Download Excel Report (Sorted by %)</button>
       <button type="button" class="secondary" id="downloadPdfPctBtn">Download PDF Report (Sorted by %)</button>
-      <button type="button" class="secondary" id="downloadPdfPSBtn">Download PDF Report (PS-Wise, Red Only)</button>
+      <button type="button" class="secondary" id="downloadPdfPSBtn" style="background:#b91c1c; color:#ffffff;">Download PDF Report (PS-Wise, Red Only)</button>
       <button type="button" class="secondary" id="downloadSupervisorBtn">Download Supervisor Report</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfBtn">Download Supervisor Report PDF</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfAvgBtn">Download Supervisor Report PDF (Sorted by Avg %)</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfAscBtn">Download Supervisor Report PDF (Lowest Avg % First, Coloured)</button>
+      <button type="button" class="secondary" id="downloadHearingXlsxBtn">Download Daily Hearing Report (Excel)</button>
+      <button type="button" class="secondary" id="downloadHearingPdfBtn">Download Daily Hearing Report (PDF)</button>
     </div>
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
@@ -1037,6 +1039,8 @@ const downloadSupervisorBtn = document.getElementById("downloadSupervisorBtn");
 const downloadSupervisorPdfBtn = document.getElementById("downloadSupervisorPdfBtn");
 const downloadSupervisorPdfAvgBtn = document.getElementById("downloadSupervisorPdfAvgBtn");
 const downloadSupervisorPdfAscBtn = document.getElementById("downloadSupervisorPdfAscBtn");
+const downloadHearingXlsxBtn = document.getElementById("downloadHearingXlsxBtn");
+const downloadHearingPdfBtn = document.getElementById("downloadHearingPdfBtn");
 const redThreshold = document.getElementById("redThreshold");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
 const adminResultsWrap = document.getElementById("adminResultsWrap");
@@ -1624,6 +1628,202 @@ downloadSupervisorPdfAvgBtn.addEventListener("click", () =>
   runSupervisorPdf(downloadSupervisorPdfAvgBtn, "Download Supervisor Report PDF (Sorted by Avg %)", "desc"));
 downloadSupervisorPdfAscBtn.addEventListener("click", () =>
   runSupervisorPdf(downloadSupervisorPdfAscBtn, "Download Supervisor Report PDF (Lowest Avg % First, Coloured)", "asc"));
+
+/* ---------------- Daily Hearing Report (Addl. AERO-wise) ----------------
+   Layout copied from "Daily_Hearing__Report_Performa.xlsx". Each Addl. AERO
+   covers the PS ranges below; their row adds up today's figures for those PS:
+     Total Cases Assigned  = Number of notices generated = sum of Notices Generated
+     Notices delivered     = Documents collected & uploaded = sum of Notices Delivered
+     Hearing concluded     = sum of Parked for Final Publication w.r.t Notices Generated */
+const ADDL_AEROS = [
+  { centre: "Govt. Boys Senior Secondary School, Prem Nagar (School ID-1516013)", name: "Dr. Sabya Sachin, Addl. AERO", ranges: [[1, 15]] },
+  { centre: "Govt. Girls Senior Secondary School, Prem Nagar (School ID-1516030)", name: "Ms. Vandana Sharma, Addl. AERO", ranges: [[16, 30]] },
+  { centre: "Voter Centre, AC-24, Patel Nagar, B-Block New Ranjit Nagar, New Delhi", name: "Sh. Hanshraj Meena, Addl. AERO", ranges: [[31, 45], [121, 125]] },
+  { centre: "G.B.S.S.S., West Patel Nagar (School ID-1516140)", name: "Sh. Ramkumar Singh Chauhan, Addl. AERO", ranges: [[46, 60]] },
+  { centre: "GGSSS, West Patel Nagar (School ID-1516141)", name: "Ms. Ekpreet Kaur, Addl. AERO", ranges: [[61, 75]] },
+  { centre: "Govt. Sarvodaya Bal Vidyalaya, West Patel Nagar (School ID-1516143)", name: "Sh. Jaya Krushna Swain, Addl. AERO", ranges: [[76, 90]] },
+  { centre: "SKV, West Patel Nagar (School ID-1516142)", name: "Ms. Seema Shrivastava, Addl. AERO", ranges: [[91, 105]] },
+  { centre: "SKV Ranjit Nagar", name: "Ms. Suman Sharma, Addl. AERO", ranges: [[106, 120], [141, 145]] },
+  { centre: "Food & Supply Office, Circle-24, B-Block New Ranjit Nagar, New Delhi", name: "Sh. Jai Bahgwan, Addl. AERO", ranges: [[126, 140]] },
+  { centre: "Sarvodaya Bal Vidyalaya, Shadi Khampur (School ID-1516011)", name: "Sh. Narendra Singh, Addl. AERO", ranges: [[146, 160]] },
+  { centre: "SKV, Ranjit Nagar (School ID-1516021)", name: "Ms. Anupama Taneja, Addl. AERO", ranges: [[161, 175]] },
+  { centre: "SKV, Shadi Khampur (School ID-1516022)", name: "Ms. Rajni Gupta, Addl. AERO", ranges: [[176, 190]] },
+];
+const HEARING_HEADERS = [
+  "S.NO.",
+  "Location/Hearing Centres ",
+  "Name of the Hearing Center  In-charge",
+  "Total Number of Cases Assigned in Polling Stations",
+  "Number of notices generated",
+  "Number of cases in which notices were delivered to  electors",
+  "Number of cases in which documents collected & uploaded by BLO",
+  "Number of cases hearing, concluded by Addl. AEROs",
+];
+const HEARING_DISTRICT = "NAME OF DISTRICT CENTRAL DISTRICT  - CENTRAL DISTRICT";
+const HEARING_AC = "NUMBER AND NAME OF ASSEMBLY CONTSTITUENCY :  AC 24 PATEL NAGAR";
+const HEARING_HEADING = "Daily Report regarding Disposal of Cases:";
+
+function buildHearingRows(withPct) {
+  const byPS = {};
+  withPct.forEach((e) => { byPS[e.ps] = e; });
+  return ADDL_AEROS.map((a, i) => {
+    let gen = 0, del = 0, heard = 0;
+    a.ranges.forEach(([from, to]) => {
+      for (let ps = from; ps <= to; ps++) {
+        const e = byPS[ps];
+        if (!e) continue;
+        gen += Number(e.generated) || 0;
+        del += Number(e.delivered) || 0;
+        heard += parkedNum(e.parkedNotices);
+      }
+    });
+    return [i + 1, a.centre, a.name, gen, gen, del, del, heard];
+  });
+}
+
+function hearingDateLabel(iso) {
+  const MON = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  const [y, m, d] = iso.split("-");
+  return `Date: -${Number(d)} ${MON[Number(m) - 1]} ${y}`;
+}
+
+async function downloadHearingExcel(rd) {
+  const { dateVal, withPct } = rd;
+  const rows = buildHearingRows(withPct);
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Sheet1", {
+    pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  [8.43, 67.19, 40.94, 18.71, 20.14, 18.14, 24, 23.29].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+  const bold = (size, name) => ({ bold: true, size, name: name || "Calibri" });
+  ws.getCell("H1").value = hearingDateLabel(dateVal);
+  ws.getCell("H1").font = bold(14);
+  ws.getCell("H1").alignment = { horizontal: "left", vertical: "middle" };
+  ws.mergeCells("A2:F2");
+  ws.getCell("A2").value = HEARING_DISTRICT;
+  ws.getCell("A2").font = bold(16);
+  ws.getCell("A2").alignment = { horizontal: "center", vertical: "middle" };
+  ws.mergeCells("A4:F4");
+  ws.getCell("A4").value = HEARING_AC;
+  ws.getCell("A4").font = bold(14);
+  ws.getCell("A4").alignment = { horizontal: "left", vertical: "middle" };
+  ws.mergeCells("A6:G6");
+  ws.getCell("A6").value = HEARING_HEADING;
+  ws.getCell("A6").font = bold(14);
+  ws.getCell("A6").alignment = { horizontal: "center", vertical: "middle" };
+  ws.getRow(1).height = 20.4; ws.getRow(2).height = 23.2; ws.getRow(4).height = 20.4; ws.getRow(6).height = 20.4;
+
+  const BORDER = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+  const header = ws.getRow(8);
+  header.height = 102;
+  HEARING_HEADERS.forEach((h, i) => {
+    const c = header.getCell(i + 1);
+    c.value = h;
+    c.font = bold(14);
+    c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    c.border = BORDER;
+  });
+
+  rows.forEach((vals, r) => {
+    const row = ws.getRow(9 + r);
+    row.height = 27;
+    vals.forEach((v, i) => {
+      const c = row.getCell(i + 1);
+      c.value = v;
+      c.border = BORDER;
+      if (i === 0) {
+        c.font = bold(12);
+        c.alignment = { horizontal: "center", vertical: "middle" };
+      } else if (i === 1) {
+        c.font = bold(14, "Times New Roman");
+        c.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
+      } else if (i === 2) {
+        c.font = bold(14);
+        c.alignment = { horizontal: "left", vertical: "middle" };
+      } else {
+        c.font = bold(14);
+        c.alignment = { horizontal: "center", vertical: "middle" };
+      }
+    });
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `DAILY_HEARING_REPORT_${fileDate(dateVal)}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
+
+function downloadHearingPdf(rd) {
+  const { dateVal, withPct } = rd;
+  const rows = buildHearingRows(withPct);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const left = 20, right = pageWidth - 20;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text(hearingDateLabel(dateVal), right, 28, { align: "right" });
+  doc.setFontSize(13);
+  doc.text(HEARING_DISTRICT, pageWidth / 2, 50, { align: "center" });
+  doc.setFontSize(11);
+  doc.text(HEARING_AC, left, 72);
+  doc.text(HEARING_HEADING, pageWidth / 2, 94, { align: "center" });
+
+  doc.autoTable({
+    head: [HEARING_HEADERS.map((h) => h.trim())],
+    body: rows,
+    startY: 106,
+    margin: { left, right: 20 },
+    theme: "grid",
+    styles: {
+      font: "helvetica", fontStyle: "bold", fontSize: 10, valign: "middle", halign: "center",
+      lineWidth: 0.6, lineColor: [0, 0, 0], textColor: [0, 0, 0], cellPadding: 4,
+    },
+    headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontSize: 9.5 },
+    columnStyles: {
+      0: { cellWidth: 40 },
+      1: { cellWidth: "auto", halign: "left", font: "times" }, // takes whatever width is left
+      2: { cellWidth: 144, halign: "left" },
+      3: { cellWidth: 82 }, 4: { cellWidth: 82 }, 5: { cellWidth: 82 }, 6: { cellWidth: 86 }, 7: { cellWidth: 86 },
+    },
+  });
+
+  doc.save(`DAILY_HEARING_REPORT_${fileDate(dateVal)}.pdf`);
+}
+
+async function runHearingReport(btn, label, builder) {
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  adminResultsWrap.innerHTML = "";
+  try {
+    const rd = await fetchTodayReportData();
+    if (!rd) {
+      adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${today.iso}) yet.</div>`;
+      return;
+    }
+    await builder(rd);
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded Daily Hearing Report for today (${rd.dateVal}).</div>`;
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+downloadHearingXlsxBtn.addEventListener("click", () =>
+  runHearingReport(downloadHearingXlsxBtn, "Download Daily Hearing Report (Excel)", downloadHearingExcel));
+downloadHearingPdfBtn.addEventListener("click", () =>
+  runHearingReport(downloadHearingPdfBtn, "Download Daily Hearing Report (PDF)", downloadHearingPdf));
 
 downloadAllBtn.addEventListener("click", async () => {
   downloadAllBtn.disabled = true;
