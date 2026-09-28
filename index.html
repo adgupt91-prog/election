@@ -1205,6 +1205,8 @@ async function fetchTodayReportData() {
 const RED_HEX = "FFF5B7B1", GREEN_HEX = "FFA9DFBF", YELLOW_HEX = "FFF9E79F";
 const RED_RGB = [245, 183, 177], GREEN_RGB = [169, 223, 184], YELLOW_RGB = [249, 231, 159];
 const LARGE_COLS = new Set(["ps", "bloName", "pct"]);
+// Count columns whose values are shown +2 bigger than the default in every report.
+const COUNT_COLS = new Set(["generated", "delivered", "parkN", "parkO", "gen", "del"]);
 /* Parked-for-publication values: blank for rows saved before these fields
    existed, otherwise a number. parkedNum() treats blanks as 0 for totals. */
 const parkedCell = (v) => (v === "" || v === null || v === undefined) ? "" : Number(v);
@@ -1255,7 +1257,7 @@ async function downloadExcelReport(rd) {
       cell.border = THIN_BORDER;
       cell.alignment = { horizontal: "center", vertical: "middle" };
       const key = sheet.columns[colNumber - 1].key;
-      cell.font = { bold: true, size: LARGE_COLS.has(key) ? 13 : 11 };
+      cell.font = { bold: true, size: (LARGE_COLS.has(key) || COUNT_COLS.has(key)) ? 13 : 11 };
     });
 
     const pctCell = row.getCell("pct");
@@ -1309,7 +1311,10 @@ function downloadPdfByPercentage(rd) {
     headStyles: {
       fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9,
     },
-    columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 7: { fontSize: 10 } },
+    columnStyles: {
+      1: { fontSize: 10 }, 2: { fontSize: 10 }, 7: { fontSize: 10 },
+      3: { fontSize: 10 }, 4: { fontSize: 10 }, 5: { fontSize: 10 }, 6: { fontSize: 10 },
+    },
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 7) {
         const entry = withPct[data.row.index];
@@ -1348,7 +1353,10 @@ function downloadPdfByPS(rd) {
     headStyles: {
       fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9,
     },
-    columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 7: { fontSize: 10 } },
+    columnStyles: {
+      1: { fontSize: 10 }, 2: { fontSize: 10 }, 7: { fontSize: 10 },
+      3: { fontSize: 10 }, 4: { fontSize: 10 }, 5: { fontSize: 10 }, 6: { fontSize: 10 },
+    },
     didParseCell: (data) => {
       if (data.section === "body") {
         const entry = byPS[data.row.index];
@@ -1444,15 +1452,16 @@ async function downloadSupervisorReport(rd) {
     { header: "Average %", key: "avg", width: 16 },
   ];
 
-  const styleRow = (row) => {
+  const styleRow = (row, isHeader) => {
     row.eachCell((cell, colNumber) => {
       cell.border = THIN_BORDER;
       cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-      const isAvg = sheet.columns[colNumber - 1].key === "avg";
-      cell.font = { bold: true, size: isAvg ? 14 : 11 };
+      const key = sheet.columns[colNumber - 1].key;
+      const size = key === "avg" ? 14 : (!isHeader && COUNT_COLS.has(key) ? 13 : 11);
+      cell.font = { bold: true, size };
     });
   };
-  styleRow(sheet.getRow(1));
+  styleRow(sheet.getRow(1), true);
 
   [...SUPERVISORS].sort((a, b) => a.start - b.start).forEach((sup) => {
     const rows = byName[sup.name] || [];
@@ -1574,7 +1583,10 @@ function downloadSupervisorPdf(rd, mode) {
     headStyles: {
       fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 10,
     },
-    columnStyles: { 5: { fontSize: 13 } }, // Average % — bigger
+    columnStyles: {
+      5: { fontSize: 13 }, // Average % — bigger
+      1: { fontSize: 12 }, 2: { fontSize: 12 }, 3: { fontSize: 12 }, 4: { fontSize: 12 },
+    },
     didParseCell: (data) => {
       if (data.section === "body" && rowFill[data.row.index]) {
         data.cell.styles.fillColor = rowFill[data.row.index];
