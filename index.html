@@ -542,6 +542,7 @@
       <button type="button" class="secondary" id="downloadExcelBtn">Download Excel Report (Sorted by %)</button>
       <button type="button" class="secondary" id="downloadPdfPctBtn">Download PDF Report (Sorted by %)</button>
       <button type="button" class="secondary" id="downloadPdfPSBtn">Download PDF Report (PS-Wise, Red Only)</button>
+      <button type="button" class="secondary" id="downloadSupervisorBtn">Download Supervisor Report</button>
     </div>
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
@@ -1015,6 +1016,7 @@ const pendingBtn = document.getElementById("pendingBtn");
 const downloadExcelBtn = document.getElementById("downloadExcelBtn");
 const downloadPdfPctBtn = document.getElementById("downloadPdfPctBtn");
 const downloadPdfPSBtn = document.getElementById("downloadPdfPSBtn");
+const downloadSupervisorBtn = document.getElementById("downloadSupervisorBtn");
 const redThreshold = document.getElementById("redThreshold");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
 const adminResultsWrap = document.getElementById("adminResultsWrap");
@@ -1386,6 +1388,89 @@ downloadPdfPSBtn.addEventListener("click", async () => {
   } finally {
     downloadPdfPSBtn.disabled = false;
     downloadPdfPSBtn.textContent = "Download PDF Report (PS-Wise, Red Only)";
+  }
+});
+
+/* Supervisor-wise summary for today: one row per supervisor, in PS order
+   (NANAK CHAND first, then RAMABIRAJ MEENA, ...). Totals are the sum of that
+   supervisor's PS rows; Average % is the mean of each PS's own percentage. */
+async function downloadSupervisorReport(rd) {
+  const { dateVal, withPct, reportTitle } = rd;
+
+  const byName = {};
+  withPct.forEach((e) => {
+    (byName[e.supervisor] = byName[e.supervisor] || []).push(e);
+  });
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Supervisor Report");
+  sheet.columns = [
+    { header: "Supervisor Name", key: "name", width: 28 },
+    { header: "Total Notices Generated", key: "gen", width: 24 },
+    { header: "Total Notices Delivered", key: "del", width: 24 },
+    { header: "Average %", key: "avg", width: 16 },
+  ];
+
+  const styleRow = (row) => {
+    row.eachCell((cell, colNumber) => {
+      cell.border = THIN_BORDER;
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      const isAvg = sheet.columns[colNumber - 1].key === "avg";
+      cell.font = { bold: true, size: isAvg ? 14 : 11 };
+    });
+  };
+  styleRow(sheet.getRow(1));
+
+  [...SUPERVISORS].sort((a, b) => a.start - b.start).forEach((sup) => {
+    const rows = byName[sup.name] || [];
+    let row;
+    if (rows.length === 0) {
+      row = sheet.addRow({ name: sup.name, gen: "", del: "", avg: "Not submitted" });
+    } else {
+      const gen = rows.reduce((t, e) => t + e.generated, 0);
+      const del = rows.reduce((t, e) => t + e.delivered, 0);
+      const avg = rows.reduce((t, e) => t + e.pct, 0) / rows.length;
+      row = sheet.addRow({ name: sup.name, gen, del, avg: avg.toFixed(1) + "%" });
+    }
+    styleRow(row);
+  });
+
+  sheet.insertRow(1, [reportTitle.replace("BLO NOTICE DELIVERY REPORT", "SUPERVISOR-WISE NOTICE DELIVERY REPORT")]);
+  sheet.mergeCells(1, 1, 1, 4);
+  const titleCell = sheet.getCell("A1");
+  titleCell.font = { bold: true, size: 15 };
+  titleCell.alignment = { horizontal: "center", vertical: "middle" };
+  titleCell.border = THIN_BORDER;
+  sheet.getRow(1).height = 24;
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `BLO_SUPERVISOR_REPORT_${fileDate(dateVal)}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
+
+downloadSupervisorBtn.addEventListener("click", async () => {
+  downloadSupervisorBtn.disabled = true;
+  downloadSupervisorBtn.textContent = "Loading…";
+  adminResultsWrap.innerHTML = "";
+  try {
+    const rd = await fetchTodayReportData();
+    if (!rd) {
+      adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${today.iso}) yet.</div>`;
+      return;
+    }
+    await downloadSupervisorReport(rd);
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded supervisor report for today (${rd.dateVal}).</div>`;
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
+  } finally {
+    downloadSupervisorBtn.disabled = false;
+    downloadSupervisorBtn.textContent = "Download Supervisor Report";
   }
 });
 
