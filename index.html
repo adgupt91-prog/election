@@ -545,6 +545,7 @@
       <button type="button" class="secondary" id="downloadSupervisorBtn">Download Supervisor Report</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfBtn">Download Supervisor Report PDF</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfAvgBtn">Download Supervisor Report PDF (Sorted by Avg %)</button>
+      <button type="button" class="secondary" id="downloadSupervisorPdfAscBtn">Download Supervisor Report PDF (Lowest Avg % First, Coloured)</button>
     </div>
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
@@ -1021,6 +1022,7 @@ const downloadPdfPSBtn = document.getElementById("downloadPdfPSBtn");
 const downloadSupervisorBtn = document.getElementById("downloadSupervisorBtn");
 const downloadSupervisorPdfBtn = document.getElementById("downloadSupervisorPdfBtn");
 const downloadSupervisorPdfAvgBtn = document.getElementById("downloadSupervisorPdfAvgBtn");
+const downloadSupervisorPdfAscBtn = document.getElementById("downloadSupervisorPdfAscBtn");
 const redThreshold = document.getElementById("redThreshold");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
 const adminResultsWrap = document.getElementById("adminResultsWrap");
@@ -1479,9 +1481,12 @@ downloadSupervisorBtn.addEventListener("click", async () => {
 });
 
 /* Same numbers as the supervisor Excel report, as a PDF.
-   sortByAvgDesc = false -> PS order (NANAK CHAND first ...);
-   sortByAvgDesc = true  -> highest Average % first, "Not submitted" at the bottom. */
-function downloadSupervisorPdf(rd, sortByAvgDesc) {
+   mode "ps"   -> PS order (NANAK CHAND first ...), no colours
+   mode "desc" -> highest Average % first, no colours
+   mode "asc"  -> lowest Average % first; the first 5 submitted rows are
+                  red (whole row), the last 4 submitted rows green.
+   "Not submitted" supervisors always go at the bottom, uncoloured. */
+function downloadSupervisorPdf(rd, mode) {
   const { dateVal, withPct, reportTitle } = rd;
 
   const byName = {};
@@ -1500,13 +1505,23 @@ function downloadSupervisorPdf(rd, sortByAvgDesc) {
     };
   });
 
-  if (sortByAvgDesc) {
+  if (mode === "desc" || mode === "asc") {
     rows.sort((a, b) => {
       if (a.avg === null && b.avg === null) return 0;
       if (a.avg === null) return 1;
       if (b.avg === null) return -1;
-      return b.avg - a.avg;
+      return mode === "desc" ? b.avg - a.avg : a.avg - b.avg;
     });
+  }
+
+  // Colours only for the ascending report, and only among submitted rows.
+  const rowFill = new Array(rows.length).fill(null);
+  if (mode === "asc") {
+    const submittedCount = rows.filter((r) => r.avg !== null).length;
+    const redCount = Math.min(5, submittedCount);
+    for (let i = 0; i < redCount; i++) rowFill[i] = RED_RGB;
+    const greenStart = Math.max(redCount, submittedCount - 4);
+    for (let i = greenStart; i < submittedCount; i++) rowFill[i] = GREEN_RGB;
   }
 
   const title = reportTitle.replace("BLO NOTICE DELIVERY REPORT", "SUPERVISOR-WISE NOTICE DELIVERY REPORT");
@@ -1529,13 +1544,18 @@ function downloadSupervisorPdf(rd, sortByAvgDesc) {
       fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 10,
     },
     columnStyles: { 3: { fontSize: 13 } }, // Average % — bigger
+    didParseCell: (data) => {
+      if (data.section === "body" && rowFill[data.row.index]) {
+        data.cell.styles.fillColor = rowFill[data.row.index];
+      }
+    },
   });
 
-  const suffix = sortByAvgDesc ? "_BY_AVG" : "";
+  const suffix = mode === "desc" ? "_BY_AVG" : (mode === "asc" ? "_LOWEST_FIRST" : "");
   doc.save(`BLO_SUPERVISOR_REPORT${suffix}_${fileDate(dateVal)}.pdf`);
 }
 
-async function runSupervisorPdf(btn, label, sortByAvgDesc) {
+async function runSupervisorPdf(btn, label, mode) {
   btn.disabled = true;
   btn.textContent = "Loading…";
   adminResultsWrap.innerHTML = "";
@@ -1545,7 +1565,7 @@ async function runSupervisorPdf(btn, label, sortByAvgDesc) {
       adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${today.iso}) yet.</div>`;
       return;
     }
-    downloadSupervisorPdf(rd, sortByAvgDesc);
+    downloadSupervisorPdf(rd, mode);
     adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded supervisor report PDF for today (${rd.dateVal}).</div>`;
   } catch (err) {
     adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
@@ -1556,9 +1576,11 @@ async function runSupervisorPdf(btn, label, sortByAvgDesc) {
 }
 
 downloadSupervisorPdfBtn.addEventListener("click", () =>
-  runSupervisorPdf(downloadSupervisorPdfBtn, "Download Supervisor Report PDF", false));
+  runSupervisorPdf(downloadSupervisorPdfBtn, "Download Supervisor Report PDF", "ps"));
 downloadSupervisorPdfAvgBtn.addEventListener("click", () =>
-  runSupervisorPdf(downloadSupervisorPdfAvgBtn, "Download Supervisor Report PDF (Sorted by Avg %)", true));
+  runSupervisorPdf(downloadSupervisorPdfAvgBtn, "Download Supervisor Report PDF (Sorted by Avg %)", "desc"));
+downloadSupervisorPdfAscBtn.addEventListener("click", () =>
+  runSupervisorPdf(downloadSupervisorPdfAscBtn, "Download Supervisor Report PDF (Lowest Avg % First, Coloured)", "asc"));
 
 downloadAllBtn.addEventListener("click", async () => {
   downloadAllBtn.disabled = true;
