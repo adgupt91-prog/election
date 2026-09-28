@@ -960,7 +960,7 @@ submitBtn.addEventListener("click", async () => {
     clearTimeout(timeoutId);
     const data = await res.json();
     if (data && data.ok) {
-      lockFormAfterSubmit(supervisor);
+      lockFormAfterSubmit(supervisor, data.date);
     } else {
       throw new Error((data && data.error) || "Unknown error");
     }
@@ -976,12 +976,16 @@ submitBtn.addEventListener("click", async () => {
   }
 });
 
-function lockFormAfterSubmit(supervisor) {
+function lockFormAfterSubmit(supervisor, savedIsoDate) {
+  // Show the date the server actually saved under (falls back to the page's date).
+  const savedDisplay = savedIsoDate
+    ? savedIsoDate.split("-").reverse().join("-")
+    : today.display;
   banner.classList.remove("hidden");
   bannerInner.className = "banner-inner locked";
   bannerInner.innerHTML = `
     <div class="submitted-big">SUBMITTED</div>
-    <div class="submitted-sub">${supervisor.name} — ${today.display}<br/>Your entry has been saved. This form is now locked for this session to prevent an accidental duplicate submission.</div>
+    <div class="submitted-sub">${supervisor.name} — ${savedDisplay}<br/>Your entry has been saved. This form is now locked for this session to prevent an accidental duplicate submission.</div>
   `;
 
   // Freeze everything so the supervisor can't second-guess and resubmit.
