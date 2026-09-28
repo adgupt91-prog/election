@@ -543,6 +543,8 @@
       <button type="button" class="secondary" id="downloadPdfPctBtn">Download PDF Report (Sorted by %)</button>
       <button type="button" class="secondary" id="downloadPdfPSBtn">Download PDF Report (PS-Wise, Red Only)</button>
       <button type="button" class="secondary" id="downloadSupervisorBtn">Download Supervisor Report</button>
+      <button type="button" class="secondary" id="downloadSupervisorPdfBtn">Download Supervisor Report PDF</button>
+      <button type="button" class="secondary" id="downloadSupervisorPdfAvgBtn">Download Supervisor Report PDF (Sorted by Avg %)</button>
     </div>
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
@@ -1017,6 +1019,8 @@ const downloadExcelBtn = document.getElementById("downloadExcelBtn");
 const downloadPdfPctBtn = document.getElementById("downloadPdfPctBtn");
 const downloadPdfPSBtn = document.getElementById("downloadPdfPSBtn");
 const downloadSupervisorBtn = document.getElementById("downloadSupervisorBtn");
+const downloadSupervisorPdfBtn = document.getElementById("downloadSupervisorPdfBtn");
+const downloadSupervisorPdfAvgBtn = document.getElementById("downloadSupervisorPdfAvgBtn");
 const redThreshold = document.getElementById("redThreshold");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
 const adminResultsWrap = document.getElementById("adminResultsWrap");
@@ -1473,6 +1477,88 @@ downloadSupervisorBtn.addEventListener("click", async () => {
     downloadSupervisorBtn.textContent = "Download Supervisor Report";
   }
 });
+
+/* Same numbers as the supervisor Excel report, as a PDF.
+   sortByAvgDesc = false -> PS order (NANAK CHAND first ...);
+   sortByAvgDesc = true  -> highest Average % first, "Not submitted" at the bottom. */
+function downloadSupervisorPdf(rd, sortByAvgDesc) {
+  const { dateVal, withPct, reportTitle } = rd;
+
+  const byName = {};
+  withPct.forEach((e) => {
+    (byName[e.supervisor] = byName[e.supervisor] || []).push(e);
+  });
+
+  let rows = [...SUPERVISORS].sort((a, b) => a.start - b.start).map((sup) => {
+    const list = byName[sup.name] || [];
+    if (list.length === 0) return { name: sup.name, gen: "", del: "", avg: null };
+    return {
+      name: sup.name,
+      gen: list.reduce((t, e) => t + e.generated, 0),
+      del: list.reduce((t, e) => t + e.delivered, 0),
+      avg: list.reduce((t, e) => t + e.pct, 0) / list.length,
+    };
+  });
+
+  if (sortByAvgDesc) {
+    rows.sort((a, b) => {
+      if (a.avg === null && b.avg === null) return 0;
+      if (a.avg === null) return 1;
+      if (b.avg === null) return -1;
+      return b.avg - a.avg;
+    });
+  }
+
+  const title = reportTitle.replace("BLO NOTICE DELIVERY REPORT", "SUPERVISOR-WISE NOTICE DELIVERY REPORT");
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(title, pageWidth / 2, 32, { align: "center" });
+
+  doc.autoTable({
+    head: [["Supervisor Name", "Total Notices Generated", "Total Notices Delivered", "Average %"]],
+    body: rows.map((r) => [r.name, r.gen, r.del, r.avg === null ? "Not submitted" : r.avg.toFixed(1) + "%"]),
+    startY: 48,
+    styles: {
+      halign: "center", valign: "middle", fontStyle: "bold",
+      lineWidth: 0.5, lineColor: [140, 133, 120], fontSize: 10,
+    },
+    headStyles: {
+      fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 10,
+    },
+    columnStyles: { 3: { fontSize: 13 } }, // Average % — bigger
+  });
+
+  const suffix = sortByAvgDesc ? "_BY_AVG" : "";
+  doc.save(`BLO_SUPERVISOR_REPORT${suffix}_${fileDate(dateVal)}.pdf`);
+}
+
+async function runSupervisorPdf(btn, label, sortByAvgDesc) {
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  adminResultsWrap.innerHTML = "";
+  try {
+    const rd = await fetchTodayReportData();
+    if (!rd) {
+      adminResultsWrap.innerHTML = `<div class="admin-empty">No entries found for today (${today.iso}) yet.</div>`;
+      return;
+    }
+    downloadSupervisorPdf(rd, sortByAvgDesc);
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded supervisor report PDF for today (${rd.dateVal}).</div>`;
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not load the report. Check your connection and try again.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+downloadSupervisorPdfBtn.addEventListener("click", () =>
+  runSupervisorPdf(downloadSupervisorPdfBtn, "Download Supervisor Report PDF", false));
+downloadSupervisorPdfAvgBtn.addEventListener("click", () =>
+  runSupervisorPdf(downloadSupervisorPdfAvgBtn, "Download Supervisor Report PDF (Sorted by Avg %)", true));
 
 downloadAllBtn.addEventListener("click", async () => {
   downloadAllBtn.disabled = true;
