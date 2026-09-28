@@ -1205,6 +1205,11 @@ async function fetchTodayReportData() {
 const RED_HEX = "FFF5B7B1", GREEN_HEX = "FFA9DFBF", YELLOW_HEX = "FFF9E79F";
 const RED_RGB = [245, 183, 177], GREEN_RGB = [169, 223, 184], YELLOW_RGB = [249, 231, 159];
 const LARGE_COLS = new Set(["ps", "bloName", "pct"]);
+/* Parked-for-publication values: blank for rows saved before these fields
+   existed, otherwise a number. parkedNum() treats blanks as 0 for totals. */
+const parkedCell = (v) => (v === "" || v === null || v === undefined) ? "" : Number(v);
+const parkedNum = (v) => Number(v) || 0;
+
 const THIN_BORDER = {
   top: { style: "thin", color: { argb: "FF8C8578" } },
   left: { style: "thin", color: { argb: "FF8C8578" } },
@@ -1223,12 +1228,14 @@ async function downloadExcelReport(rd) {
     { header: "BLO Name", key: "bloName", width: 26 },
     { header: "Notices Generated", key: "generated", width: 18 },
     { header: "Notices Delivered", key: "delivered", width: 18 },
+    { header: "Parked for Final Publication w.r.t Notices Generated", key: "parkN", width: 26 },
+    { header: "Parked for Final Publication w.r.t Others", key: "parkO", width: 22 },
     { header: "Percentage", key: "pct", width: 14 },
   ];
 
   sheet.getRow(1).eachCell((cell, colNumber) => {
     cell.border = THIN_BORDER;
-    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     const key = sheet.columns[colNumber - 1].key;
     cell.font = { bold: true, size: LARGE_COLS.has(key) ? 13 : 11 };
   });
@@ -1240,6 +1247,8 @@ async function downloadExcelReport(rd) {
       bloName: BLO_NAMES[e.ps] || "",
       generated: e.generated,
       delivered: e.delivered,
+      parkN: parkedCell(e.parkedNotices),
+      parkO: parkedCell(e.parkedOthers),
       pct: e.pct.toFixed(1) + "%",
     });
     row.eachCell((cell, colNumber) => {
@@ -1255,7 +1264,7 @@ async function downloadExcelReport(rd) {
   });
 
   sheet.insertRow(1, [reportTitle]);
-  sheet.mergeCells(1, 1, 1, 6);
+  sheet.mergeCells(1, 1, 1, 8);
   const titleCell = sheet.getCell("A1");
   titleCell.font = { bold: true, size: 15 };
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
@@ -1285,11 +1294,12 @@ function downloadPdfByPercentage(rd) {
   doc.text(reportTitle, pageWidth / 2, 32, { align: "center" });
 
   const bodyRows = withPct.map((e) => [
-    e.supervisor, e.ps, BLO_NAMES[e.ps] || "", e.generated, e.delivered, e.pct.toFixed(1) + "%",
+    e.supervisor, e.ps, BLO_NAMES[e.ps] || "", e.generated, e.delivered,
+    parkedCell(e.parkedNotices), parkedCell(e.parkedOthers), e.pct.toFixed(1) + "%",
   ]);
 
   doc.autoTable({
-    head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Percentage"]],
+    head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Parked for Final Publication w.r.t Notices Generated", "Parked for Final Publication w.r.t Others", "Percentage"]],
     body: bodyRows,
     startY: 48,
     styles: {
@@ -1299,9 +1309,9 @@ function downloadPdfByPercentage(rd) {
     headStyles: {
       fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9,
     },
-    columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 5: { fontSize: 10 } },
+    columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 7: { fontSize: 10 } },
     didParseCell: (data) => {
-      if (data.section === "body" && data.column.index === 5) {
+      if (data.section === "body" && data.column.index === 7) {
         const entry = withPct[data.row.index];
         data.cell.styles.fillColor = redSet.has(entry) ? RED_RGB : (greenSet.has(entry) ? GREEN_RGB : YELLOW_RGB);
       }
@@ -1323,11 +1333,12 @@ function downloadPdfByPS(rd) {
   doc.text(reportTitle, pageWidth / 2, 32, { align: "center" });
 
   const bodyRowsPS = byPS.map((e) => [
-    e.supervisor, e.ps, BLO_NAMES[e.ps] || "", e.generated, e.delivered, e.pct.toFixed(1) + "%",
+    e.supervisor, e.ps, BLO_NAMES[e.ps] || "", e.generated, e.delivered,
+    parkedCell(e.parkedNotices), parkedCell(e.parkedOthers), e.pct.toFixed(1) + "%",
   ]);
 
   doc.autoTable({
-    head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Percentage"]],
+    head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Parked for Final Publication w.r.t Notices Generated", "Parked for Final Publication w.r.t Others", "Percentage"]],
     body: bodyRowsPS,
     startY: 48,
     styles: {
@@ -1337,7 +1348,7 @@ function downloadPdfByPS(rd) {
     headStyles: {
       fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9,
     },
-    columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 5: { fontSize: 10 } },
+    columnStyles: { 1: { fontSize: 10 }, 2: { fontSize: 10 }, 7: { fontSize: 10 } },
     didParseCell: (data) => {
       if (data.section === "body") {
         const entry = byPS[data.row.index];
@@ -1428,13 +1439,15 @@ async function downloadSupervisorReport(rd) {
     { header: "Supervisor Name", key: "name", width: 28 },
     { header: "Total Notices Generated", key: "gen", width: 24 },
     { header: "Total Notices Delivered", key: "del", width: 24 },
+    { header: "Total Parked for Final Publication w.r.t Notices Generated", key: "parkN", width: 28 },
+    { header: "Total Parked for Final Publication w.r.t Others", key: "parkO", width: 24 },
     { header: "Average %", key: "avg", width: 16 },
   ];
 
   const styleRow = (row) => {
     row.eachCell((cell, colNumber) => {
       cell.border = THIN_BORDER;
-      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
       const isAvg = sheet.columns[colNumber - 1].key === "avg";
       cell.font = { bold: true, size: isAvg ? 14 : 11 };
     });
@@ -1445,18 +1458,20 @@ async function downloadSupervisorReport(rd) {
     const rows = byName[sup.name] || [];
     let row;
     if (rows.length === 0) {
-      row = sheet.addRow({ name: sup.name, gen: "", del: "", avg: "Not submitted" });
+      row = sheet.addRow({ name: sup.name, gen: "", del: "", parkN: "", parkO: "", avg: "Not submitted" });
     } else {
       const gen = rows.reduce((t, e) => t + e.generated, 0);
       const del = rows.reduce((t, e) => t + e.delivered, 0);
       const avg = rows.reduce((t, e) => t + e.pct, 0) / rows.length;
-      row = sheet.addRow({ name: sup.name, gen, del, avg: avg.toFixed(1) + "%" });
+      const parkN = rows.reduce((t, e) => t + parkedNum(e.parkedNotices), 0);
+      const parkO = rows.reduce((t, e) => t + parkedNum(e.parkedOthers), 0);
+      row = sheet.addRow({ name: sup.name, gen, del, parkN, parkO, avg: avg.toFixed(1) + "%" });
     }
     styleRow(row);
   });
 
   sheet.insertRow(1, [reportTitle.replace("BLO NOTICE DELIVERY REPORT", "SUPERVISOR-WISE NOTICE DELIVERY REPORT")]);
-  sheet.mergeCells(1, 1, 1, 4);
+  sheet.mergeCells(1, 1, 1, 6);
   const titleCell = sheet.getCell("A1");
   titleCell.font = { bold: true, size: 15 };
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
@@ -1510,11 +1525,13 @@ function downloadSupervisorPdf(rd, mode) {
 
   let rows = [...SUPERVISORS].sort((a, b) => a.start - b.start).map((sup) => {
     const list = byName[sup.name] || [];
-    if (list.length === 0) return { name: sup.name, gen: "", del: "", avg: null };
+    if (list.length === 0) return { name: sup.name, gen: "", del: "", parkN: "", parkO: "", avg: null };
     return {
       name: sup.name,
       gen: list.reduce((t, e) => t + e.generated, 0),
       del: list.reduce((t, e) => t + e.delivered, 0),
+      parkN: list.reduce((t, e) => t + parkedNum(e.parkedNotices), 0),
+      parkO: list.reduce((t, e) => t + parkedNum(e.parkedOthers), 0),
       avg: list.reduce((t, e) => t + e.pct, 0) / list.length,
     };
   });
@@ -1547,8 +1564,8 @@ function downloadSupervisorPdf(rd, mode) {
   doc.text(title, pageWidth / 2, 32, { align: "center" });
 
   doc.autoTable({
-    head: [["Supervisor Name", "Total Notices Generated", "Total Notices Delivered", "Average %"]],
-    body: rows.map((r) => [r.name, r.gen, r.del, r.avg === null ? "Not submitted" : r.avg.toFixed(1) + "%"]),
+    head: [["Supervisor Name", "Total Notices Generated", "Total Notices Delivered", "Total Parked for Final Publication w.r.t Notices Generated", "Total Parked for Final Publication w.r.t Others", "Average %"]],
+    body: rows.map((r) => [r.name, r.gen, r.del, r.parkN, r.parkO, r.avg === null ? "Not submitted" : r.avg.toFixed(1) + "%"]),
     startY: 48,
     styles: {
       halign: "center", valign: "middle", fontStyle: "bold",
@@ -1557,7 +1574,7 @@ function downloadSupervisorPdf(rd, mode) {
     headStyles: {
       fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 10,
     },
-    columnStyles: { 3: { fontSize: 13 } }, // Average % — bigger
+    columnStyles: { 5: { fontSize: 13 } }, // Average % — bigger
     didParseCell: (data) => {
       if (data.section === "body" && rowFill[data.row.index]) {
         data.cell.styles.fillColor = rowFill[data.row.index];
