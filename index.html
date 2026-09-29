@@ -544,7 +544,6 @@
       <button type="button" class="secondary" id="downloadPdfPSBtn" style="background:#b91c1c; color:#ffffff;">Download PDF Report (PS-Wise, Red Only)</button>
       <button type="button" class="secondary" id="downloadSupervisorBtn">Download Supervisor Report</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfBtn">Download Supervisor Report PDF</button>
-      <button type="button" class="secondary" id="downloadSupervisorPdfAvgBtn">Download Supervisor Report PDF (Sorted by Avg %)</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfAscBtn">Download Supervisor Report PDF (Lowest Avg % First, Coloured)</button>
       <button type="button" class="secondary" id="downloadHearingXlsxBtn" style="background:#bfdbfe; color:#0e2338;">Download Daily Hearing Report (Excel)</button>
       <button type="button" class="secondary" id="downloadHearingPdfBtn">Download Daily Hearing Report (PDF)</button>
@@ -1037,7 +1036,6 @@ const downloadPdfPctBtn = document.getElementById("downloadPdfPctBtn");
 const downloadPdfPSBtn = document.getElementById("downloadPdfPSBtn");
 const downloadSupervisorBtn = document.getElementById("downloadSupervisorBtn");
 const downloadSupervisorPdfBtn = document.getElementById("downloadSupervisorPdfBtn");
-const downloadSupervisorPdfAvgBtn = document.getElementById("downloadSupervisorPdfAvgBtn");
 const downloadSupervisorPdfAscBtn = document.getElementById("downloadSupervisorPdfAscBtn");
 const downloadHearingXlsxBtn = document.getElementById("downloadHearingXlsxBtn");
 const downloadHearingPdfBtn = document.getElementById("downloadHearingPdfBtn");
@@ -1624,8 +1622,6 @@ async function runSupervisorPdf(btn, label, mode) {
 
 downloadSupervisorPdfBtn.addEventListener("click", () =>
   runSupervisorPdf(downloadSupervisorPdfBtn, "Download Supervisor Report PDF", "ps"));
-downloadSupervisorPdfAvgBtn.addEventListener("click", () =>
-  runSupervisorPdf(downloadSupervisorPdfAvgBtn, "Download Supervisor Report PDF (Sorted by Avg %)", "desc"));
 downloadSupervisorPdfAscBtn.addEventListener("click", () =>
   runSupervisorPdf(downloadSupervisorPdfAscBtn, "Download Supervisor Report PDF (Lowest Avg % First, Coloured)", "asc"));
 
@@ -1769,11 +1765,11 @@ const ERO_SIGN_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAACvCAYA
 
 function downloadHearingPdf(rd) {
   const { dateVal, withPct } = rd;
-  // Same rows as the Excel report, plus a "PS No. Allotted" column after the officer's name.
+  // Same rows as the Excel report, except "Total Number of Cases Assigned in
+  // Polling Stations" shows the officer's allotted PS range (e.g. "PS-106 to 120").
   const psLabel = (a) => a.ranges.map(([f, t]) => `PS-${f} to ${t}`).join(" & ");
-  const rows = buildHearingRows(withPct).map((r, i) => [...r.slice(0, 3), psLabel(ADDL_AEROS[i]), ...r.slice(3)]);
+  const rows = buildHearingRows(withPct).map((r, i) => { const row = [...r]; row[3] = psLabel(ADDL_AEROS[i]); return row; });
   const headers = HEARING_HEADERS.map((h) => h.trim());
-  headers.splice(3, 0, "PS No. Allotted");
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
@@ -1803,9 +1799,9 @@ function downloadHearingPdf(rd) {
     columnStyles: {
       0: { cellWidth: 40 },
       1: { cellWidth: "auto", halign: "left", font: "times" }, // takes whatever width is left
-      2: { cellWidth: 124, halign: "left" },
-      3: { cellWidth: 78 }, // PS No. Allotted — wide enough for "PS-106 to 120" on one line
-      4: { cellWidth: 74 }, 5: { cellWidth: 74 }, 6: { cellWidth: 78 }, 7: { cellWidth: 80 }, 8: { cellWidth: 80 },
+      2: { cellWidth: 140, halign: "left" },
+      3: { cellWidth: 84 }, // PS range — wide enough for "PS-106 to 120" on one line
+      4: { cellWidth: 80 }, 5: { cellWidth: 82 }, 6: { cellWidth: 84 }, 7: { cellWidth: 84 },
     },
   });
 
