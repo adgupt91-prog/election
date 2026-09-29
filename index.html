@@ -1636,15 +1636,18 @@ downloadSupervisorPdfAscBtn.addEventListener("click", () =>
      Notices delivered     = Documents collected & uploaded = sum of Notices Delivered
      Hearing concluded     = sum of Parked for Final Publication w.r.t Notices Generated */
 const ADDL_AEROS = [
+  // As per ERO order F No. ERO/AC-24/BLO & Sup/SIR-2026/2002-2008 dated 29.09.2026
   { centre: "Govt. Boys Senior Secondary School, Prem Nagar (School ID-1516013)", name: "Dr. Sabya Sachin, Addl. AERO", ranges: [[1, 15]] },
   { centre: "Govt. Girls Senior Secondary School, Prem Nagar (School ID-1516030)", name: "Ms. Vandana Sharma, Addl. AERO", ranges: [[16, 30]] },
-  { centre: "Voter Centre, AC-24, Patel Nagar, B-Block New Ranjit Nagar, New Delhi", name: "Sh. Hanshraj Meena, Addl. AERO", ranges: [[31, 45], [121, 125]] },
+  { centre: "Voter Centre, AC-24, Patel Nagar, B-Block New Ranjit Nagar, New Delhi", name: "Sh. Hanshraj Meena, Addl. AERO", ranges: [[31, 45]] },
   { centre: "G.B.S.S.S., West Patel Nagar (School ID-1516140)", name: "Sh. Ramkumar Singh Chauhan, Addl. AERO", ranges: [[46, 60]] },
   { centre: "GGSSS, West Patel Nagar (School ID-1516141)", name: "Ms. Ekpreet Kaur, Addl. AERO", ranges: [[61, 75]] },
   { centre: "Govt. Sarvodaya Bal Vidyalaya, West Patel Nagar (School ID-1516143)", name: "Sh. Jaya Krushna Swain, Addl. AERO", ranges: [[76, 90]] },
   { centre: "SKV, West Patel Nagar (School ID-1516142)", name: "Ms. Seema Shrivastava, Addl. AERO", ranges: [[91, 105]] },
-  { centre: "SKV Ranjit Nagar", name: "Ms. Suman Sharma, Addl. AERO", ranges: [[106, 120], [141, 145]] },
+  { centre: "SKV Ranjit Nagar", name: "Ms. Suman Sharma, Addl. AERO", ranges: [[106, 120]] },
+  { centre: "Voter Centre, AC-24, Patel Nagar, B-Block New Ranjit Nagar, New Delhi", name: "Sh. Shiv Kumar Sharma, AERO", ranges: [[121, 125]] },
   { centre: "Food & Supply Office, Circle-24, B-Block New Ranjit Nagar, New Delhi", name: "Sh. Jai Bahgwan, Addl. AERO", ranges: [[126, 140]] },
+  { centre: "Voter Centre, AC-24, Patel Nagar, B-Block New Ranjit Nagar, New Delhi", name: "Sh. Yashpal, ERO", ranges: [[141, 145]] },
   { centre: "Sarvodaya Bal Vidyalaya, Shadi Khampur (School ID-1516011)", name: "Sh. Narendra Singh, Addl. AERO", ranges: [[146, 160]] },
   { centre: "SKV, Ranjit Nagar (School ID-1516021)", name: "Ms. Anupama Taneja, Addl. AERO", ranges: [[161, 175]] },
   { centre: "SKV, Shadi Khampur (School ID-1516022)", name: "Ms. Rajni Gupta, Addl. AERO", ranges: [[176, 190]] },
@@ -1771,22 +1774,22 @@ function downloadHearingPdf(rd) {
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.text(hearingDateLabel(dateVal), right, 28, { align: "right" });
+  doc.text(hearingDateLabel(dateVal), right, 24, { align: "right" });
   doc.setFontSize(13);
-  doc.text(HEARING_DISTRICT, pageWidth / 2, 50, { align: "center" });
+  doc.text(HEARING_DISTRICT, pageWidth / 2, 42, { align: "center" });
   doc.setFontSize(11);
-  doc.text(HEARING_AC, left, 72);
-  doc.text(HEARING_HEADING, pageWidth / 2, 94, { align: "center" });
+  doc.text(HEARING_AC, left, 60);
+  doc.text(HEARING_HEADING, pageWidth / 2, 78, { align: "center" });
 
   doc.autoTable({
     head: [HEARING_HEADERS.map((h) => h.trim())],
     body: rows,
-    startY: 106,
-    margin: { left, right: 20 },
+    startY: 88,
+    margin: { left, right: 20, bottom: 16 }, // 14 officers fit on one page
     theme: "grid",
     styles: {
       font: "helvetica", fontStyle: "bold", fontSize: 10, valign: "middle", halign: "center",
-      lineWidth: 0.6, lineColor: [0, 0, 0], textColor: [0, 0, 0], cellPadding: 4,
+      lineWidth: 0.6, lineColor: [0, 0, 0], textColor: [0, 0, 0], cellPadding: 3,
     },
     headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontSize: 9.5 },
     columnStyles: {
