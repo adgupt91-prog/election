@@ -543,7 +543,6 @@
       <button type="button" class="secondary" id="downloadPdfPctBtn">Download PDF Report (Sorted by %)</button>
       <button type="button" class="secondary" id="downloadPdfPSBtn" style="background:#b91c1c; color:#ffffff;">Download PDF Report (PS-Wise, Red Only)</button>
       <button type="button" class="secondary" id="downloadSupervisorBtn">Download Supervisor Report</button>
-      <button type="button" class="secondary" id="downloadSupervisorPdfBtn">Download Supervisor Report PDF</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfAscBtn">Download Supervisor Report PDF (Lowest Avg % First, Coloured)</button>
       <button type="button" class="secondary" id="downloadHearingXlsxBtn" style="background:#bfdbfe; color:#0e2338;">Download Daily Hearing Report (Excel)</button>
       <button type="button" class="secondary" id="downloadHearingPdfBtn">Download Daily Hearing Report (PDF)</button>
@@ -1035,7 +1034,6 @@ const downloadExcelBtn = document.getElementById("downloadExcelBtn");
 const downloadPdfPctBtn = document.getElementById("downloadPdfPctBtn");
 const downloadPdfPSBtn = document.getElementById("downloadPdfPSBtn");
 const downloadSupervisorBtn = document.getElementById("downloadSupervisorBtn");
-const downloadSupervisorPdfBtn = document.getElementById("downloadSupervisorPdfBtn");
 const downloadSupervisorPdfAscBtn = document.getElementById("downloadSupervisorPdfAscBtn");
 const downloadHearingXlsxBtn = document.getElementById("downloadHearingXlsxBtn");
 const downloadHearingPdfBtn = document.getElementById("downloadHearingPdfBtn");
@@ -1620,8 +1618,6 @@ async function runSupervisorPdf(btn, label, mode) {
   }
 }
 
-downloadSupervisorPdfBtn.addEventListener("click", () =>
-  runSupervisorPdf(downloadSupervisorPdfBtn, "Download Supervisor Report PDF", "ps"));
 downloadSupervisorPdfAscBtn.addEventListener("click", () =>
   runSupervisorPdf(downloadSupervisorPdfAscBtn, "Download Supervisor Report PDF (Lowest Avg % First, Coloured)", "asc"));
 
