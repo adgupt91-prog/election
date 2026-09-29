@@ -546,7 +546,7 @@
       <button type="button" class="secondary" id="downloadSupervisorPdfBtn">Download Supervisor Report PDF</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfAvgBtn">Download Supervisor Report PDF (Sorted by Avg %)</button>
       <button type="button" class="secondary" id="downloadSupervisorPdfAscBtn">Download Supervisor Report PDF (Lowest Avg % First, Coloured)</button>
-      <button type="button" class="secondary" id="downloadHearingXlsxBtn">Download Daily Hearing Report (Excel)</button>
+      <button type="button" class="secondary" id="downloadHearingXlsxBtn" style="background:#bfdbfe; color:#0e2338;">Download Daily Hearing Report (Excel)</button>
       <button type="button" class="secondary" id="downloadHearingPdfBtn">Download Daily Hearing Report (PDF)</button>
     </div>
 
@@ -1765,7 +1765,11 @@ async function downloadHearingExcel(rd) {
 
 function downloadHearingPdf(rd) {
   const { dateVal, withPct } = rd;
-  const rows = buildHearingRows(withPct);
+  // Same rows as the Excel report, plus a "PS No. Allotted" column after the officer's name.
+  const psLabel = (a) => a.ranges.map(([f, t]) => `PS-${f} to ${t}`).join(" & ");
+  const rows = buildHearingRows(withPct).map((r, i) => [...r.slice(0, 3), psLabel(ADDL_AEROS[i]), ...r.slice(3)]);
+  const headers = HEARING_HEADERS.map((h) => h.trim());
+  headers.splice(3, 0, "PS No. Allotted");
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
@@ -1782,7 +1786,7 @@ function downloadHearingPdf(rd) {
   doc.text(HEARING_HEADING, pageWidth / 2, 78, { align: "center" });
 
   doc.autoTable({
-    head: [HEARING_HEADERS.map((h) => h.trim())],
+    head: [headers],
     body: rows,
     startY: 88,
     margin: { left, right: 20, bottom: 16 }, // 14 officers fit on one page
@@ -1795,8 +1799,9 @@ function downloadHearingPdf(rd) {
     columnStyles: {
       0: { cellWidth: 40 },
       1: { cellWidth: "auto", halign: "left", font: "times" }, // takes whatever width is left
-      2: { cellWidth: 144, halign: "left" },
-      3: { cellWidth: 82 }, 4: { cellWidth: 82 }, 5: { cellWidth: 82 }, 6: { cellWidth: 86 }, 7: { cellWidth: 86 },
+      2: { cellWidth: 124, halign: "left" },
+      3: { cellWidth: 78 }, // PS No. Allotted — wide enough for "PS-106 to 120" on one line
+      4: { cellWidth: 74 }, 5: { cellWidth: 74 }, 6: { cellWidth: 78 }, 7: { cellWidth: 80 }, 8: { cellWidth: 80 },
     },
   });
 
