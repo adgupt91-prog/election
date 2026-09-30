@@ -1096,16 +1096,18 @@ displayBtn.addEventListener("click", async () => {
       return;
     }
 
-    let totalGen = 0, totalDel = 0;
+    let totalGen = 0, totalDel = 0, totalParkN = 0, totalParkO = 0;
     const aoa = [["Date", "Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Parked for Final Publication w.r.t Notices Generated", "Parked for Final Publication w.r.t Others"]];
     entries.forEach((e) => {
       const g = Number(e.generated) || 0;
       const d = Number(e.delivered) || 0;
       totalGen += g;
       totalDel += d;
+      totalParkN += parkedNum(e.parkedNotices);
+      totalParkO += parkedNum(e.parkedOthers);
       aoa.push([dateVal, e.supervisor, e.ps, BLO_NAMES[e.ps] || "", g, d, e.parkedNotices ?? "", e.parkedOthers ?? ""]);
     });
-    aoa.push(["", "Total", "", "", totalGen, totalDel, "", ""]);
+    aoa.push(["", "TOTAL", "", "", totalGen, totalDel, totalParkN, totalParkO]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 10 }, { wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 30 }];
@@ -1225,6 +1227,22 @@ const COUNT_COLS = new Set(["generated", "delivered", "parkN", "parkO", "gen", "
 const parkedCell = (v) => (v === "" || v === null || v === undefined) ? "" : Number(v);
 const parkedNum = (v) => Number(v) || 0;
 
+/* Totals row shared by every report: sums of the four count columns, and an
+   overall % = total delivered ÷ total generated. */
+function reportTotals(list) {
+  const t = { gen: 0, del: 0, parkN: 0, parkO: 0 };
+  list.forEach((e) => {
+    t.gen += Number(e.generated) || 0;
+    t.del += Number(e.delivered) || 0;
+    t.parkN += parkedNum(e.parkedNotices);
+    t.parkO += parkedNum(e.parkedOthers);
+  });
+  t.pct = t.gen > 0 ? (t.del / t.gen) * 100 : 0;
+  return t;
+}
+// Grey, bold "TOTAL" row at the end of every PDF table (last page only).
+const PDF_TOTAL_STYLE = { fillColor: [225, 225, 225], textColor: [0, 0, 0], fontStyle: "bold", halign: "center", fontSize: 10 };
+
 const THIN_BORDER = {
   top: { style: "thin", color: { argb: "FF8C8578" } },
   left: { style: "thin", color: { argb: "FF8C8578" } },
@@ -1278,6 +1296,18 @@ async function downloadExcelReport(rd) {
     pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
   });
 
+  const tot = reportTotals(withPct);
+  const totalRow = sheet.addRow({
+    supervisor: "TOTAL", ps: "", bloName: "", generated: tot.gen, delivered: tot.del,
+    parkN: tot.parkN, parkO: tot.parkO, pct: tot.pct.toFixed(1) + "%",
+  });
+  totalRow.eachCell({ includeEmpty: true }, (cell) => {
+    cell.border = THIN_BORDER;
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.font = { bold: true, size: 13 };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE1E1E1" } };
+  });
+
   sheet.insertRow(1, [reportTitle]);
   sheet.mergeCells(1, 1, 1, 8);
   const titleCell = sheet.getCell("A1");
@@ -1316,6 +1346,9 @@ function downloadPdfByPercentage(rd) {
   doc.autoTable({
     head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Parked for Final Publication w.r.t Notices Generated", "Parked for Final Publication w.r.t Others", "Percentage"]],
     body: bodyRows,
+    foot: [(() => { const t = reportTotals(withPct); return ["TOTAL", "", "", t.gen, t.del, t.parkN, t.parkO, t.pct.toFixed(1) + "%"]; })()],
+    showFoot: "lastPage",
+    footStyles: PDF_TOTAL_STYLE,
     startY: 48,
     styles: {
       halign: "center", valign: "middle", fontStyle: "bold",
@@ -1358,6 +1391,9 @@ function downloadPdfByPS(rd) {
   doc.autoTable({
     head: [["Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Parked for Final Publication w.r.t Notices Generated", "Parked for Final Publication w.r.t Others", "Percentage"]],
     body: bodyRowsPS,
+    foot: [(() => { const t = reportTotals(withPct); return ["TOTAL", "", "", t.gen, t.del, t.parkN, t.parkO, t.pct.toFixed(1) + "%"]; })()],
+    showFoot: "lastPage",
+    footStyles: PDF_TOTAL_STYLE,
     startY: 48,
     styles: {
       halign: "center", valign: "middle", fontStyle: "bold",
@@ -1492,6 +1528,13 @@ async function downloadSupervisorReport(rd) {
     styleRow(row);
   });
 
+  // TOTAL row: sums across all PS entered today; Average % = average of every PS's %.
+  const tot = reportTotals(withPct);
+  const avgAll = withPct.length ? withPct.reduce((t, e) => t + e.pct, 0) / withPct.length : 0;
+  const totalRow = sheet.addRow({ name: "TOTAL", gen: tot.gen, del: tot.del, parkN: tot.parkN, parkO: tot.parkO, avg: avgAll.toFixed(1) + "%" });
+  styleRow(totalRow);
+  totalRow.eachCell((cell) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE1E1E1" } }; });
+
   sheet.insertRow(1, [reportTitle.replace("BLO NOTICE DELIVERY REPORT", "SUPERVISOR-WISE NOTICE DELIVERY REPORT")]);
   sheet.mergeCells(1, 1, 1, 6);
   const titleCell = sheet.getCell("A1");
@@ -1588,6 +1631,13 @@ function downloadSupervisorPdf(rd, mode) {
   doc.autoTable({
     head: [["Supervisor Name", "Total Notices Generated", "Total Notices Delivered", "Total Parked for Final Publication w.r.t Notices Generated", "Total Parked for Final Publication w.r.t Others", "Average %"]],
     body: rows.map((r) => [r.name, r.gen, r.del, r.parkN, r.parkO, r.avg === null ? "Not submitted" : r.avg.toFixed(1) + "%"]),
+    foot: [(() => {
+      const t = reportTotals(withPct);
+      const avgAll = withPct.length ? withPct.reduce((s, e) => s + e.pct, 0) / withPct.length : 0;
+      return ["TOTAL", t.gen, t.del, t.parkN, t.parkO, avgAll.toFixed(1) + "%"];
+    })()],
+    showFoot: "lastPage",
+    footStyles: { ...PDF_TOTAL_STYLE, fontSize: 12 },
     startY: 48,
     styles: {
       halign: "center", valign: "middle", fontStyle: "bold",
@@ -1757,6 +1807,19 @@ async function downloadHearingExcel(rd) {
     });
   });
 
+  // TOTAL row under the 14 officers.
+  const sums = [3, 4, 5, 6, 7].map((i) => rows.reduce((t, r) => t + (Number(r[i]) || 0), 0));
+  const totalRow = ws.getRow(9 + rows.length);
+  totalRow.height = 27;
+  ["", "TOTAL", "", ...sums].forEach((v, i) => {
+    const c = totalRow.getCell(i + 1);
+    c.value = v;
+    c.border = BORDER;
+    c.font = bold(14);
+    c.alignment = { horizontal: i === 1 ? "left" : "center", vertical: "middle" };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE1E1E1" } };
+  });
+
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const link = document.createElement("a");
@@ -1797,6 +1860,14 @@ function downloadHearingPdf(rd) {
   doc.autoTable({
     head: [headers],
     body: rows,
+    // TOTAL row: all 190 PS, and the sums of the four count columns.
+    foot: [(() => {
+      const nums = buildHearingRows(withPct);
+      const sum = (i) => nums.reduce((t, r) => t + (Number(r[i]) || 0), 0);
+      return ["", "TOTAL", "", "PS-1 to 190", sum(4), sum(5), sum(6), sum(7)];
+    })()],
+    showFoot: "lastPage",
+    footStyles: { fillColor: [225, 225, 225], textColor: [0, 0, 0], fontStyle: "bold", halign: "center", fontSize: 10 },
     startY: 78,
     margin: { left, right: 20, bottom: 16 }, // 14 officers + ERO signature fit on one page
     theme: "grid",
@@ -1876,16 +1947,18 @@ downloadAllBtn.addEventListener("click", async () => {
       return;
     }
 
-    let totalGen = 0, totalDel = 0;
+    let totalGen = 0, totalDel = 0, totalParkN = 0, totalParkO = 0;
     const aoa = [["Date", "Supervisor", "PS Number", "BLO Name", "Notices Generated", "Notices Delivered", "Parked for Final Publication w.r.t Notices Generated", "Parked for Final Publication w.r.t Others"]];
     entries.forEach((e) => {
       const g = Number(e.generated) || 0;
       const d = Number(e.delivered) || 0;
       totalGen += g;
       totalDel += d;
+      totalParkN += parkedNum(e.parkedNotices);
+      totalParkO += parkedNum(e.parkedOthers);
       aoa.push([e.date, e.supervisor, e.ps, BLO_NAMES[e.ps] || "", g, d, e.parkedNotices ?? "", e.parkedOthers ?? ""]);
     });
-    aoa.push(["", "Total", "", "", totalGen, totalDel, "", ""]);
+    aoa.push(["", "TOTAL", "", "", totalGen, totalDel, totalParkN, totalParkO]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 10 }, { wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 30 }];
