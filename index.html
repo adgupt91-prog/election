@@ -1141,7 +1141,9 @@ pendingBtn.addEventListener("click", async () => {
 
     const entries = data.entries || [];
     const submittedNames = new Set(entries.map((e) => e.supervisor));
-    const pending = SUPERVISORS.filter((s) => !submittedNames.has(s.name));
+    // Same order as before, except ADARSH GUPTA is always listed last.
+    const pending = SUPERVISORS.filter((s) => !submittedNames.has(s.name))
+      .sort((a, b) => (a.name === "ADARSH GUPTA") - (b.name === "ADARSH GUPTA"));
 
     if (pending.length === 0) {
       adminResultsWrap.innerHTML = `<div class="all-done">All 19 supervisors have submitted for ${dateVal}.</div>`;
