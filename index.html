@@ -561,6 +561,15 @@
 
     <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
 
+    <!-- For a supervisor who can't submit (e.g. lost phone): copy their last entry into today, Delivered +1 -->
+    <div class="admin-toolbar" style="margin-bottom:16px;">
+      <div class="field">
+        <label for="carrySupervisor">Supervisor (cannot submit today)</label>
+        <select id="carrySupervisor"></select>
+      </div>
+      <button type="button" id="carryForwardBtn">Insert previous entry +1</button>
+    </div>
+
     <div id="adminResultsWrap"></div>
   </div>
 </div>
@@ -1050,6 +1059,14 @@ const downloadHearingXlsxBtn = document.getElementById("downloadHearingXlsxBtn")
 const downloadHearingPdfBtn = document.getElementById("downloadHearingPdfBtn");
 const redThreshold = document.getElementById("redThreshold");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
+const carrySupervisor = document.getElementById("carrySupervisor");
+const carryForwardBtn = document.getElementById("carryForwardBtn");
+SUPERVISORS.forEach((sup, i) => {
+  const opt = document.createElement("option");
+  opt.value = i;
+  opt.textContent = `${sup.name}  (PS ${sup.start}–${sup.start + 9})`;
+  carrySupervisor.appendChild(opt);
+});
 const adminResultsWrap = document.getElementById("adminResultsWrap");
 
 openAdminBtn.addEventListener("click", () => {
@@ -1926,6 +1943,68 @@ downloadHearingXlsxBtn.addEventListener("click", () =>
   runHearingReport(downloadHearingXlsxBtn, "Download Daily Hearing Report (Excel)", downloadHearingExcel));
 downloadHearingPdfBtn.addEventListener("click", () =>
   runHearingReport(downloadHearingPdfBtn, "Download Daily Hearing Report (PDF)", downloadHearingPdf));
+
+/* "Insert previous entry +1": for a supervisor who can't submit (e.g. lost
+   phone). Takes their most recent saved entry before today and saves it again
+   for today with Notices Delivered + 1 per PS (never above Notices Generated).
+   Generated and both Parked figures are copied unchanged. Uses the normal save,
+   so it overwrites any entry already saved for that supervisor today. */
+carryForwardBtn.addEventListener("click", async () => {
+  const sup = SUPERVISORS[carrySupervisor.value];
+  if (!sup) return;
+  carryForwardBtn.disabled = true;
+  carryForwardBtn.textContent = "Loading…";
+  adminResultsWrap.innerHTML = "";
+  try {
+    const res = await fetch(SCRIPT_URL + "?all=1");
+    const data = await res.json();
+    if (!data || data.ok === false) throw new Error((data && data.error) || "Unknown error");
+
+    const mine = (data.entries || []).filter((e) => e.supervisor === sup.name);
+    const alreadyToday = mine.some((e) => e.date === today.iso);
+    const prevDates = [...new Set(mine.map((e) => e.date).filter((d) => d < today.iso))].sort();
+    if (prevDates.length === 0) {
+      adminResultsWrap.innerHTML = `<div class="admin-empty">${sup.name} has no earlier entry to copy from.</div>`;
+      return;
+    }
+    const lastDate = prevDates[prevDates.length - 1];
+    const lastRows = mine.filter((e) => e.date === lastDate).sort((a, b) => a.ps - b.ps);
+    const show = (iso) => iso.split("-").reverse().join("-");
+
+    const ask = `Insert today's entry for ${sup.name}?\n\n` +
+      `Copies the entry of ${show(lastDate)} (${lastRows.length} PS) with Notices Delivered +1.` +
+      (alreadyToday ? `\n\nWARNING: ${sup.name} has ALREADY submitted today. This will overwrite today's entry.` : "");
+    if (!window.confirm(ask)) {
+      adminResultsWrap.innerHTML = `<div class="admin-summary">Cancelled. Nothing was saved.</div>`;
+      return;
+    }
+
+    carryForwardBtn.textContent = "Saving…";
+    const blos = lastRows.map((e) => {
+      const generated = Number(e.generated) || 0;
+      const delivered = Math.min((Number(e.delivered) || 0) + 1, generated); // never above Generated
+      return { ps: Number(e.ps), generated, delivered, parkedNotices: parkedNum(e.parkedNotices), parkedOthers: parkedNum(e.parkedOthers) };
+    });
+    const capped = lastRows.filter((e, i) => blos[i].delivered === (Number(e.delivered) || 0)).map((e) => e.ps);
+
+    const saveRes = await fetch(SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ supervisor: sup.name, date: today.iso, blos }),
+    });
+    const saved = await saveRes.json();
+    if (!saved || !saved.ok) throw new Error((saved && saved.error) || "Save failed");
+
+    adminResultsWrap.innerHTML = `<div class="all-done">Saved for ${sup.name} on ${show(saved.date || today.iso)}: ` +
+      `copied from ${show(lastDate)}, Notices Delivered +1 for ${blos.length - capped.length} PS.` +
+      (capped.length ? ` PS ${capped.join(", ")} already had Delivered = Generated, so kept unchanged.` : "") + `</div>`;
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not insert the entry. Check your connection and try again.</div>`;
+  } finally {
+    carryForwardBtn.disabled = false;
+    carryForwardBtn.textContent = "Insert previous entry +1";
+  }
+});
 
 downloadAllBtn.addEventListener("click", async () => {
   downloadAllBtn.disabled = true;
