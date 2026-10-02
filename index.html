@@ -570,6 +570,22 @@
       <button type="button" id="carryForwardBtn">Insert previous entry +1</button>
     </div>
 
+    <!-- Reports straight from the ECINET (ERO login) "Notice & Hearing Report" Excel -->
+    <div style="border-top:1px solid var(--line); margin:4px 0 14px; padding-top:14px;">
+      <h2 style="font-size:15px; margin:0 0 4px;">Reports from ECINET Excel</h2>
+      <p class="sub" style="margin-bottom:12px;">Upload the Excel downloaded from the ERO login. These buttons use only that file, not the supervisors' entries. Red uses the same "Mark RED if below" dropdown above.</p>
+      <div class="field">
+        <label for="eciFile">ECINET Excel file (.xlsx)</label>
+        <input type="file" id="eciFile" accept=".xlsx,.xls" />
+        <div class="hint" id="eciStatus">No file loaded yet.</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button type="button" class="secondary" id="eciPdfPSBtn" disabled style="background:#b91c1c; color:#ffffff;">ECINET: PDF Report (PS-Wise, Red Only)</button>
+        <button type="button" class="secondary" id="eciPdfPctBtn" disabled>ECINET: PDF Report (Sorted by %)</button>
+        <button type="button" class="secondary" id="eciSupPdfBtn" disabled>ECINET: Supervisor Report PDF (Lowest Avg % First, Coloured)</button>
+      </div>
+    </div>
+
     <div id="adminResultsWrap"></div>
   </div>
 </div>
@@ -1386,7 +1402,7 @@ function downloadPdfByPercentage(rd) {
     },
   });
 
-  doc.save(`BLO_NOTICE_DELIVERY_REPORT_${fileDate(dateVal)}.pdf`);
+  doc.save(`BLO_NOTICE_DELIVERY_REPORT_${fileDate(dateVal)}${rd.fileSuffix || ""}.pdf`);
 }
 
 function downloadPdfByPS(rd) {
@@ -1433,7 +1449,7 @@ function downloadPdfByPS(rd) {
     },
   });
 
-  doc.save(`BLO_NOTICE_REPORT_PS_WISE_${fileDate(dateVal)}.pdf`);
+  doc.save(`BLO_NOTICE_REPORT_PS_WISE_${fileDate(dateVal)}${rd.fileSuffix || ""}.pdf`);
 }
 
 downloadExcelBtn.addEventListener("click", async () => {
@@ -1675,7 +1691,7 @@ function downloadSupervisorPdf(rd, mode) {
   });
 
   const suffix = mode === "desc" ? "_BY_AVG" : (mode === "asc" ? "_LOWEST_FIRST" : "");
-  doc.save(`BLO_SUPERVISOR_REPORT${suffix}_${fileDate(dateVal)}.pdf`);
+  doc.save(`BLO_SUPERVISOR_REPORT${suffix}_${fileDate(dateVal)}${rd.fileSuffix || ""}.pdf`);
 }
 
 async function runSupervisorPdf(btn, label, mode) {
@@ -1949,6 +1965,122 @@ downloadHearingPdfBtn.addEventListener("click", () =>
    for today with Notices Delivered + 1 per PS (never above Notices Generated).
    Generated and both Parked figures are copied unchanged. Uses the normal save,
    so it overwrites any entry already saved for that supervisor today. */
+/* ---------------- Reports from the ECINET Excel (ERO login) ----------------
+   Reads the "Notice & Hearing Report" sheet: one row per Part No. (= PS number).
+   Column mapping (checked against the headings, so a changed format is caught):
+     Notices Generated  = "Notice Generated"
+     Notices Delivered  = "Notice Delivered"
+     Parked w.r.t Notices Generated = "Parked for Final after hearing" + "Parked for Final without hearing"
+     Parked w.r.t Others = "Parked For Final Publication w.r.t. Others"
+   The PDFs are built by the same functions as the existing buttons. */
+const eciFile = document.getElementById("eciFile");
+const eciStatus = document.getElementById("eciStatus");
+const eciButtons = ["eciPdfPSBtn", "eciPdfPctBtn", "eciSupPdfBtn"].map((id) => document.getElementById(id));
+let eciRows = null; // [{ps, generated, delivered, parkedNotices, parkedOthers}]
+
+function parseEcinetSheet(aoa) {
+  const norm = (v) => String(v == null ? "" : v).toLowerCase().replace(/\s+/g, " ").trim();
+  // Find the heading rows by locating "Part No." and the parked sub-headings.
+  const headIdx = aoa.findIndex((r) => r && r.some((c) => norm(c) === "part no."));
+  if (headIdx < 0) throw new Error('Could not find the "Part No." column. Is this the Notice & Hearing Report from ECINET?');
+  const heads = [0, 1, 2].map((k) => (aoa[headIdx + k] || []).map(norm));
+  const findCol = (row, test) => heads[row].findIndex(test);
+  const cPart = findCol(0, (h) => h === "part no.");
+  const cGen = findCol(0, (h) => h === "notice generated");
+  const cDel = findCol(0, (h) => h === "notice delivered");
+  const cParkN = findCol(1, (h) => h.includes("parked for final publication w.r.t. notices generated"));
+  const cOthers = findCol(1, (h) => h.includes("parked for final publication w.r.t. others"));
+  const cAfter = findCol(2, (h) => h.includes("parked for final after hearing"));
+  const cWithout = findCol(2, (h) => h.includes("parked for final without hearing"));
+  const missing = [["Part No.", cPart], ["Notice Generated", cGen], ["Notice Delivered", cDel],
+    ["Parked … w.r.t. Notices Generated", cParkN], ["Parked … w.r.t. Others", cOthers],
+    ["Parked for Final after hearing", cAfter], ["Parked for Final without hearing", cWithout]]
+    .filter(([, i]) => i < 0).map(([n]) => n);
+  if (missing.length) throw new Error("Column(s) not found: " + missing.join(", ") + ". The ECINET format may have changed.");
+
+  const num = (v) => Number(v) || 0;
+  const rows = [];
+  for (let i = headIdx + 3; i < aoa.length; i++) {
+    const r = aoa[i] || [];
+    const ps = Number(r[cPart]);
+    if (!Number.isInteger(ps) || ps < 1) continue; // skips blank rows and the "Total" row
+    rows.push({
+      ps,
+      generated: num(r[cGen]),
+      delivered: num(r[cDel]),
+      parkedNotices: num(r[cAfter]) + num(r[cWithout]),
+      parkedOthers: num(r[cOthers]),
+    });
+  }
+  if (rows.length === 0) throw new Error("No PS rows found in the file.");
+  return rows;
+}
+
+eciFile.addEventListener("change", async () => {
+  eciRows = null;
+  eciButtons.forEach((b) => { b.disabled = true; });
+  const file = eciFile.files && eciFile.files[0];
+  if (!file) { eciStatus.textContent = "No file loaded yet."; return; }
+  eciStatus.textContent = "Reading file…";
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = parseEcinetSheet(XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true }));
+    const known = rows.filter((r) => SUPERVISORS.some((s) => r.ps >= s.start && r.ps <= s.start + 9));
+    const missingPS = [];
+    for (let p = 1; p <= 190; p++) if (!rows.some((r) => r.ps === p)) missingPS.push(p);
+    eciRows = known;
+    const sum = (k) => known.reduce((t, r) => t + r[k], 0);
+    eciStatus.innerHTML = `<b>${file.name}</b>: ${known.length} PS loaded — Generated ${sum("generated")}, ` +
+      `Delivered ${sum("delivered")}, Parked w.r.t Notices ${sum("parkedNotices")}, Parked w.r.t Others ${sum("parkedOthers")}.` +
+      (missingPS.length ? ` <span style="color:var(--danger)">Missing PS: ${missingPS.join(", ")}.</span>` : "");
+    eciButtons.forEach((b) => { b.disabled = false; });
+  } catch (err) {
+    eciStatus.innerHTML = `<span style="color:var(--danger)">Could not read this file: ${String(err.message || err)}</span>`;
+  }
+});
+
+// Same steps as fetchTodayReportData(), but from the uploaded ECINET rows.
+function ecinetReportData() {
+  const supOf = (ps) => (SUPERVISORS.find((s) => ps >= s.start && ps <= s.start + 9) || {}).name || "";
+  const withPct = eciRows.map((e) => ({
+    ...e, supervisor: supOf(e.ps), pct: e.generated > 0 ? (e.delivered / e.generated) * 100 : 0,
+  }));
+  withPct.sort((a, b) => a.pct - b.pct);
+  const threshold = Number(redThreshold.value) || 10; // same "Mark RED if below" dropdown as the other reports
+  const redSet = new Set();
+  const nonRed = [];
+  withPct.forEach((e) => { if (e.pct < threshold) redSet.add(e); else nonRed.push(e); });
+  const greenSet = new Set([...nonRed].sort((a, b) => b.pct - a.pct).slice(0, Math.ceil(nonRed.length * 0.10)));
+  const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  const [ty, tm, td] = today.iso.split("-").map(Number);
+  return {
+    dateVal: today.iso, withPct, redSet, greenSet,
+    reportTitle: `${td} ${MONTHS[tm - 1]} ${ty}, BLO NOTICE DELIVERY REPORT`,
+    fileSuffix: "_ECINET",
+  };
+}
+
+function runEcinetReport(btn, builder) {
+  if (!eciRows) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Generating…";
+  try {
+    builder(ecinetReportData());
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded "${label}" from the ECINET file.</div>`;
+  } catch (err) {
+    adminResultsWrap.innerHTML = `<div class="admin-empty">Could not generate the report from the ECINET file.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+eciButtons[0].addEventListener("click", () => runEcinetReport(eciButtons[0], (rd) => downloadPdfByPS(rd)));
+eciButtons[1].addEventListener("click", () => runEcinetReport(eciButtons[1], (rd) => downloadPdfByPercentage(rd)));
+eciButtons[2].addEventListener("click", () => runEcinetReport(eciButtons[2], (rd) => downloadSupervisorPdf(rd, "asc")));
+
 carryForwardBtn.addEventListener("click", async () => {
   const sup = SUPERVISORS[carrySupervisor.value];
   if (!sup) return;
