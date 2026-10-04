@@ -2103,7 +2103,7 @@ eciButtons[2].addEventListener("click", () => runEcinetReport(eciButtons[2], (rd
      Disposed (Discrepancy / Non-Mapping)       -> summed from the ECINET file for the officer's PS:
         Discrepancy = Parked for Final (Logical Discrepancies) + Found ineligible (Logical Discrepancies)
         Non-Mapping = Parked for Final (No Mapping)            + Found ineligible (No Mapping)
-   "as on" date = yesterday. Signed by ERO/SDM. */
+   "as on" date = today. Signed by ERO/SDM. */
 const DIST_OFFICERS = [
   { group: 0, name: "Sh. Yashpal, ERO", from: 141, to: 145, totDisc: 496, totNoMap: 487 },
   { group: 1, name: "Sh. Shiv Kumar Sharma, AERO", from: 121, to: 125, totDisc: 715, totNoMap: 236 },
@@ -2138,9 +2138,10 @@ function districtRows() {
     return { ...o, booths: `PS ${o.from} TO ${o.to}`, disc, noMap };
   });
 }
-function yesterdaySlash() {
-  const d = new Date(new Date(today.iso + "T12:00:00").getTime() - 86400000);
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+function reportDateSlash() {
+  // Today's date as dd/mm/yyyy (the "as on" date in the District Daily Report).
+  const [y, m, d] = today.iso.split("-");
+  return `${d}/${m}/${y}`;
 }
 const DIST_TEXT = {
   title: "Daily Report",
@@ -2153,7 +2154,7 @@ const DIST_TEXT = {
   hName: "Name of ERO/AERO",
   hBooth: "Booth Assigned",
   hTotal: "Total Number of Notices/Cases in these assigned Booths",
-  hDisposed: () => `Number of notices disposed out of total in assigned Booths as on ${yesterdaySlash()}`,
+  hDisposed: () => `Number of notices disposed out of total in assigned Booths as on ${reportDateSlash()}`,
 };
 
 function loadImage(src) {
@@ -2351,7 +2352,7 @@ async function runDistrictReport(btn, builder) {
   btn.textContent = "Generating…";
   try {
     await builder();
-    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded "${label}" (disposed figures as on ${yesterdaySlash()}).</div>`;
+    adminResultsWrap.innerHTML = `<div class="admin-summary">Downloaded "${label}" (disposed figures as on ${reportDateSlash()}).</div>`;
   } catch (err) {
     adminResultsWrap.innerHTML = `<div class="admin-empty">Could not generate the District Daily Report: ${String(err.message || err)}</div>`;
   } finally {
