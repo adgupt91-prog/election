@@ -1210,6 +1210,9 @@ function fileDate(iso) {
   return `${d}-${MON[Number(m) - 1]}-${y}`;
 }
 
+// Green = top 10% of the non-red PS, plus EVERY non-red PS at or above this %.
+const GREEN_MIN_PCT = 98;
+
 async function fetchTodayReportData() {
   const dateVal = today.iso; // always today's date, regardless of the date picker
   const url = SCRIPT_URL + "?date=" + encodeURIComponent(dateVal);
@@ -1243,6 +1246,8 @@ async function fetchTodayReportData() {
   const nonRedByPctDesc = [...nonRed].sort((a, b) => b.pct - a.pct);
   const greenCount = Math.ceil(nonRedByPctDesc.length * 0.10);
   const greenSet = new Set(nonRedByPctDesc.slice(0, greenCount));
+  // Every non-red PS at 98% or above is also green, however many there are.
+  nonRed.forEach((e) => { if (e.pct >= GREEN_MIN_PCT) greenSet.add(e); });
 
   const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
   const [ty, tm, td] = dateVal.split("-").map(Number);
@@ -2068,6 +2073,7 @@ function ecinetReportData() {
   const nonRed = [];
   withPct.forEach((e) => { if (e.pct < threshold) redSet.add(e); else nonRed.push(e); });
   const greenSet = new Set([...nonRed].sort((a, b) => b.pct - a.pct).slice(0, Math.ceil(nonRed.length * 0.10)));
+  nonRed.forEach((e) => { if (e.pct >= GREEN_MIN_PCT) greenSet.add(e); }); // 98%+ always green
   const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
   const [ty, tm, td] = today.iso.split("-").map(Number);
   return {
