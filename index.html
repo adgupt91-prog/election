@@ -480,7 +480,7 @@
 </main>
 
 <div class="validation-banner hidden" id="validationBanner">
-  <div class="validation-banner-inner">⚠ A verified count can never be more than the total ASDD cases shown in brackets. Please fix the highlighted BLO(s) below before submitting.</div>
+  <div class="validation-banner-inner">⚠ Please enter whole numbers only (0 or more). A verified count can never be more than the total ASDD cases shown in brackets. Fix the highlighted box before submitting.</div>
 </div>
 
 <div class="submit-bar">
@@ -1104,7 +1104,7 @@ function buildBloRows(psNumbers) {
           <input type="number" min="0" step="1" inputmode="numeric" class="f6" data-key="form6Outside" value="0" />
         </div>
       </div>
-      <div class="mismatch-note hidden">⚠ Verified cannot be more than the total shown in brackets.</div>
+      <div class="mismatch-note hidden">⚠ Enter whole numbers only (0 or more). Verified cannot be more than the total shown in brackets.</div>
     `;
     bloList.appendChild(row);
   });
@@ -1116,14 +1116,24 @@ function buildBloRows(psNumbers) {
   updateSubmitAvailability();
 }
 
+// A box is wrong if it isn't a whole number 0 or more, or (Verified boxes) is above its "out of" limit.
+// An empty box counts as 0.
+function isBadInput(inp) {
+  if (inp.validity && inp.validity.badInput) return true;   // e.g. "-" or letters typed
+  if (String(inp.value).trim() === "") return false;
+  const n = Number(inp.value);
+  if (!Number.isInteger(n) || n < 0) return true;
+  return inp.dataset.max !== undefined && n > Number(inp.dataset.max);
+}
+
 function wireValidation() {
   bloList.querySelectorAll(".blo-row").forEach((row) => {
-    const inputs = row.querySelectorAll(".asdd");
+    const inputs = row.querySelectorAll(".asdd, .f6");
     const note = row.querySelector(".mismatch-note");
     const check = () => {
       let rowBad = false;
       inputs.forEach((inp) => {
-        const bad = (Number(inp.value) || 0) > Number(inp.dataset.max);
+        const bad = isBadInput(inp);
         inp.parentElement.classList.toggle("mismatch", bad);
         rowBad = rowBad || bad;
       });
@@ -1136,9 +1146,7 @@ function wireValidation() {
 }
 
 function hasAnyMismatch() {
-  return Array.from(bloList.querySelectorAll(".asdd")).some(
-    (inp) => (Number(inp.value) || 0) > Number(inp.dataset.max)
-  );
+  return Array.from(bloList.querySelectorAll(".asdd, .f6")).some(isBadInput);
 }
 
 function updateSubmitAvailability() {
