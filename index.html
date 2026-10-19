@@ -440,7 +440,7 @@
 <header>
   <p class="eyebrow">Special Intensive Revision 2026</p>
   <h1>BLO ASDD Verification Tracker</h1>
-  <p>Daily entry: ASDD cases verified by each BLO under your supervision.</p>
+  <p>Daily entry: each BLO enters the ASDD cases they have verified.</p>
 </header>
 
 <main>
@@ -448,9 +448,16 @@
     <div class="field">
       <label for="supervisor">Supervisor Name</label>
       <select id="supervisor">
-        <option value="" disabled selected>Select your name</option>
+        <option value="" disabled selected>Select your supervisor</option>
       </select>
       <div class="hint" id="rangeHint"></div>
+    </div>
+
+    <div class="field hidden" id="bloField" style="margin-top:14px;">
+      <label for="bloSelect">BLO Name</label>
+      <select id="bloSelect">
+        <option value="" disabled selected>Select your name</option>
+      </select>
     </div>
 
     <div class="date-row">
@@ -461,7 +468,7 @@
     </div>
   </div>
 
-  <div class="section-title">BLO-WISE ASDD VERIFICATION</div>
+  <div class="section-title">ASDD VERIFICATION</div>
   <div id="blo-list"></div>
 
   <div class="totals hidden" id="totalsBar">
@@ -474,7 +481,7 @@
 </div>
 
 <div class="submit-bar">
-  <button id="submitBtn" disabled>Select your name to continue</button>
+  <button id="submitBtn" disabled>Select supervisor and your name to continue</button>
 </div>
 
 <div class="banner hidden" id="banner">
@@ -482,7 +489,7 @@
 </div>
 
 <footer>
-  Enter cumulative verified counts to date for each BLO, not today's increment. Data is recorded against today's date automatically.
+  Enter your cumulative verified counts to date, not today's increment. Data is recorded against today's date automatically.
   <button type="button" class="admin-link" id="openAdminBtn">Admin</button>
 </footer>
 
@@ -816,6 +823,8 @@ const BLO_NAMES = {
 
 const supervisorSelect = document.getElementById("supervisor");
 const rangeHint = document.getElementById("rangeHint");
+const bloField = document.getElementById("bloField");
+const bloSelect = document.getElementById("bloSelect");
 const bloList = document.getElementById("blo-list");
 const submitBtn = document.getElementById("submitBtn");
 const banner = document.getElementById("banner");
@@ -1048,9 +1057,8 @@ const ASDD_FIELDS = [
   { key: "enrolled", label: "Verified – Already enrolled", idx: 3 },
 ];
 
-function buildBloRows(supervisor) {
+function buildBloRows(psNumbers) {
   bloList.innerHTML = "";
-  const psNumbers = Array.from({ length: 10 }, (_, i) => supervisor.start + i);
 
   psNumbers.forEach((ps) => {
     const tot = ASDD_TOTALS[ps] || [0, 0, 0, 0];
@@ -1065,8 +1073,8 @@ function buildBloRows(supervisor) {
         </div>`;
     row.innerHTML = `
       <div class="blo-head">
-        <span class="ps">BLO — PS ${ps}</span>
-        <span class="ps-num">${BLO_NAMES[ps] || ""} · Total ASDD ${tot.reduce((a, b) => a + b, 0)}</span>
+        <span class="ps">${BLO_NAMES[ps] || "BLO"} — PS ${ps}</span>
+        <span class="ps-num">Total ASDD ${tot.reduce((a, b) => a + b, 0)}</span>
       </div>
       <div class="pair" style="align-items:end;">${field(ASDD_FIELDS[0])}${field(ASDD_FIELDS[1])}</div>
       <div class="pair" style="margin-top:10px; align-items:end;">${field(ASDD_FIELDS[2])}${field(ASDD_FIELDS[3])}</div>
@@ -1108,7 +1116,7 @@ function hasAnyMismatch() {
 }
 
 function updateSubmitAvailability() {
-  if (supervisorSelect.value === "") return;
+  if (supervisorSelect.value === "" || bloSelect.value === "") return;
   if (hasAnyMismatch()) {
     submitBtn.disabled = true;
     submitBtn.textContent = "Fix highlighted fields to continue";
@@ -1136,7 +1144,28 @@ supervisorSelect.addEventListener("change", () => {
   if (idx === "") return;
   const supervisor = SUPERVISORS[idx];
   rangeHint.textContent = `PS ${supervisor.start} to ${supervisor.start + 9} · 10 BLOs`;
-  buildBloRows(supervisor);
+
+  // Fill the BLO dropdown with only this supervisor's 10 BLOs
+  bloSelect.innerHTML = '<option value="" disabled selected>Select your name</option>';
+  for (let ps = supervisor.start; ps < supervisor.start + 10; ps++) {
+    const opt = document.createElement("option");
+    opt.value = ps;
+    opt.textContent = `${BLO_NAMES[ps] || "BLO"}  (PS ${ps})`;
+    bloSelect.appendChild(opt);
+  }
+  bloField.classList.remove("hidden");
+
+  bloList.innerHTML = "";
+  totalsBar.classList.add("hidden");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Select your name to continue";
+  validationBanner.classList.add("hidden");
+  hideBanner();
+});
+
+bloSelect.addEventListener("change", () => {
+  if (bloSelect.value === "") return;
+  buildBloRows([Number(bloSelect.value)]);
   submitBtn.disabled = false;
   submitBtn.textContent = "Save today's entry";
   validationBanner.classList.add("hidden");
@@ -1154,7 +1183,7 @@ function hideBanner() {
 
 submitBtn.addEventListener("click", async () => {
   const idx = supervisorSelect.value;
-  if (idx === "") return;
+  if (idx === "" || bloSelect.value === "") return;
 
   if (hasAnyMismatch()) {
     updateSubmitAvailability();
@@ -1200,7 +1229,7 @@ submitBtn.addEventListener("click", async () => {
     clearTimeout(timeoutId);
     const data = await res.json();
     if (data && data.ok) {
-      lockFormAfterSubmit(supervisor, data.date);
+      lockFormAfterSubmit(supervisor, Number(bloSelect.value), data.date);
     } else {
       throw new Error((data && data.error) || "Unknown error");
     }
@@ -1216,7 +1245,7 @@ submitBtn.addEventListener("click", async () => {
   }
 });
 
-function lockFormAfterSubmit(supervisor, savedIsoDate) {
+function lockFormAfterSubmit(supervisor, ps, savedIsoDate) {
   // Show the date the server actually saved under (falls back to the page's date).
   const savedDisplay = savedIsoDate
     ? savedIsoDate.split("-").reverse().join("-")
@@ -1225,11 +1254,12 @@ function lockFormAfterSubmit(supervisor, savedIsoDate) {
   bannerInner.className = "banner-inner locked";
   bannerInner.innerHTML = `
     <div class="submitted-big">SUBMITTED</div>
-    <div class="submitted-sub">${supervisor.name} — ${savedDisplay}<br/>Your entry has been saved. This form is now locked for this session to prevent an accidental duplicate submission.</div>
+    <div class="submitted-sub">${BLO_NAMES[ps] || "BLO"} (PS ${ps}) — ${savedDisplay}<br/>Supervisor: ${supervisor.name}<br/>Your entry has been saved. This form is now locked for this session to prevent an accidental duplicate submission.</div>
   `;
 
-  // Freeze everything so the supervisor can't second-guess and resubmit.
+  // Freeze everything so the entry can't be accidentally resubmitted.
   supervisorSelect.disabled = true;
+  bloSelect.disabled = true;
   bloList.querySelectorAll(".asdd").forEach((el) => { el.disabled = true; });
   submitBtn.disabled = true;
   submitBtn.textContent = "Submitted ✓";
