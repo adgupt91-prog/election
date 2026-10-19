@@ -491,7 +491,44 @@
 <footer>
   Enter your cumulative verified counts to date, not today's increment. Data is recorded against today's date automatically.
   <button type="button" class="admin-link" id="openAdminBtn">Admin</button>
+  <button type="button" class="admin-link" id="openSupLoginBtn" style="margin-top:8px;">Supervisor Admin Login</button>
 </footer>
+
+<!-- Supervisor admin login overlay -->
+<div class="overlay hidden" id="supLoginOverlay">
+  <div class="overlay-card">
+    <button type="button" class="overlay-close" id="closeSupLoginBtn">&times;</button>
+    <h2>Supervisor Admin Login</h2>
+    <p class="sub">For BLO supervisors — see which of your BLOs have not filled the form today.</p>
+    <div class="field">
+      <label for="supUser">Username</label>
+      <input type="text" id="supUser" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="supPass">Password</label>
+      <input type="text" id="supPass" autocomplete="off" />
+    </div>
+    <button type="button" class="secondary" id="supLoginBtn">Log in</button>
+    <div class="login-error" id="supLoginError">Incorrect username or password.</div>
+  </div>
+</div>
+
+<!-- Supervisor admin panel overlay -->
+<div class="overlay hidden" id="supOverlay">
+  <div class="overlay-card" style="max-width:560px;">
+    <button type="button" class="overlay-close" id="closeSupBtn">&times;</button>
+    <h2>Supervisor — My Pending BLOs</h2>
+    <p class="sub">Select your name to see which of your BLOs have not submitted today.</p>
+    <div class="field">
+      <label for="supPendSelect">Supervisor Name</label>
+      <select id="supPendSelect">
+        <option value="" disabled selected>Select your name</option>
+      </select>
+    </div>
+    <button type="button" class="secondary" id="supPendBtn" style="width:100%; margin:4px 0 16px;" disabled>Show my pending BLOs</button>
+    <div id="supResultsWrap"></div>
+  </div>
+</div>
 
 <!-- Admin login overlay -->
 <div class="overlay hidden" id="loginOverlay">
@@ -516,16 +553,12 @@
 <div class="overlay hidden" id="adminOverlay">
   <div class="overlay-card" style="max-width:680px;">
     <button type="button" class="overlay-close" id="closeAdminBtn">&times;</button>
-    <h2>Admin — Daily Entries</h2>
-    <p class="sub">Pick a date and view every BLO entry logged for that day.</p>
+    <h2>Admin — ECINET Reports</h2>
+    <p class="sub">Today's pending BLO entries, and reports from the ECINET Excel.</p>
 
-    <div class="admin-toolbar">
-      <div class="field">
-        <label for="adminDate">Date</label>
-        <input type="date" id="adminDate" />
-      </div>
-      <button type="button" id="displayBtn">Display</button>
-      <button type="button" id="pendingBtn">Show Pending</button>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+      <button type="button" class="secondary" id="asddPendBloBtn" style="flex:1 1 200px;">Show Pending BLO</button>
+      <button type="button" class="secondary" id="asddPendSupBtn" style="flex:1 1 200px;">Show Pending BLO Supervisor</button>
     </div>
 
     <div class="admin-toolbar" style="margin-bottom:16px;">
@@ -572,27 +605,6 @@
         <button type="button" class="secondary" id="eciDistXlsxBtn" disabled>ECINET: District Daily Report (Excel)</button>
         <button type="button" class="secondary" id="eciDistPdfBtn" disabled>ECINET: District Daily Report (PDF)</button>
       </div>
-    </div>
-
-    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
-      <button type="button" class="secondary" id="downloadExcelBtn">Download Excel Report (Sorted by %)</button>
-      <button type="button" class="secondary" id="downloadPdfPctBtn">Download PDF Report (Sorted by %)</button>
-      <button type="button" class="secondary" id="downloadPdfPSBtn" style="background:#b91c1c; color:#ffffff;">Download PDF Report (PS-Wise, Red Only)</button>
-      <button type="button" class="secondary" id="downloadSupervisorBtn">Download Supervisor Report</button>
-      <button type="button" class="secondary" id="downloadSupervisorPdfAscBtn">Download Supervisor Report PDF (Lowest Avg % First, Coloured)</button>
-      <button type="button" class="secondary" id="downloadHearingXlsxBtn" style="background:#bfdbfe; color:#0e2338;">Download Daily Hearing Report (Excel)</button>
-      <button type="button" class="secondary" id="downloadHearingPdfBtn">Download Daily Hearing Report (PDF)</button>
-    </div>
-
-    <button type="button" class="secondary" id="downloadAllBtn" style="margin-bottom:16px;">Download All Data (All Dates)</button>
-
-    <!-- For a supervisor who can't submit (e.g. lost phone): copy their last entry into today, Delivered +1 -->
-    <div class="admin-toolbar" style="margin-bottom:16px;">
-      <div class="field">
-        <label for="carrySupervisor">Supervisor (cannot submit today)</label>
-        <select id="carrySupervisor"></select>
-      </div>
-      <button type="button" id="carryForwardBtn">Insert previous entry +1</button>
     </div>
 
     <div id="adminResultsWrap"></div>
@@ -1276,6 +1288,117 @@ function lockFormAfterSubmit(supervisor, ps, savedIsoDate) {
   submitBtn.textContent = "Submitted ✓";
 }
 
+/* ---------------- Pending BLOs for today (ASDD form) ---------------- */
+async function fetchAsddSubmittedToday() {
+  const res = await fetch(SCRIPT_URL + "?asddToday=1&t=" + Date.now());
+  const data = await res.json();
+  if (!data || data.ok === false) throw new Error((data && data.error) || "Unknown error");
+  return { date: data.date || today.iso, done: new Set((data.ps || []).map(Number)) };
+}
+const showDate = (iso) => iso.split("-").reverse().join("-");
+const supPsList = (s) => Array.from({ length: 10 }, (_, i) => s.start + i);
+const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function pendingBloListHtml(supervisors, done) {
+  return supervisors.map((s) => {
+    const pend = supPsList(s).filter((ps) => !done.has(ps));
+    if (!pend.length) return "";
+    const items = pend.map((ps) =>
+      `<li>${escHtml(BLO_NAMES[ps] || "BLO")}<span class="range">PS ${ps}</span></li>`).join("");
+    return `<div class="admin-summary" style="margin-top:12px;"><b>${escHtml(s.name)}</b> — ${pend.length} of 10 pending</div>
+            <ul class="pending-list">${items}</ul>`;
+  }).join("");
+}
+
+async function runPendingButton(btn, label, wrap, render) {
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  wrap.innerHTML = "";
+  try {
+    const { date, done } = await fetchAsddSubmittedToday();
+    wrap.innerHTML = render(date, done);
+    wrap.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) {
+    wrap.innerHTML = `<div class="admin-empty">Could not check. Check your connection and try again.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+// ADARSH GUPTA always listed last, as in the earlier pending list
+const supOrder = () => SUPERVISORS.slice().sort((a, b) => (a.name === "ADARSH GUPTA") - (b.name === "ADARSH GUPTA"));
+
+document.getElementById("asddPendBloBtn").addEventListener("click", (ev) =>
+  runPendingButton(ev.currentTarget, "Show Pending BLO", document.getElementById("adminResultsWrap"), (date, done) => {
+    const total = SUPERVISORS.length * 10;
+    const pendCount = SUPERVISORS.reduce((n, s) => n + supPsList(s).filter((ps) => !done.has(ps)).length, 0);
+    if (!pendCount) return `<div class="all-done">All ${total} BLOs have submitted for ${showDate(date)}.</div>`;
+    return `<div class="admin-summary">${pendCount} of ${total} BLOs have NOT submitted for ${showDate(date)}:</div>` +
+      pendingBloListHtml(supOrder(), done);
+  }));
+
+document.getElementById("asddPendSupBtn").addEventListener("click", (ev) =>
+  runPendingButton(ev.currentTarget, "Show Pending BLO Supervisor", document.getElementById("adminResultsWrap"), (date, done) => {
+    const rows = supOrder()
+      .map((s) => ({ s, pend: supPsList(s).filter((ps) => !done.has(ps)).length }))
+      .filter((r) => r.pend > 0);
+    if (!rows.length) return `<div class="all-done">All 19 supervisors' BLOs have submitted for ${showDate(date)}.</div>`;
+    const items = rows.map((r) =>
+      `<li>${escHtml(r.s.name)}<span class="range">${r.pend === 10 ? "none submitted" : (10 - r.pend) + " of 10 submitted"} · PS ${r.s.start}–${r.s.start + 9}</span></li>`).join("");
+    return `<div class="admin-summary">${rows.length} of ${SUPERVISORS.length} supervisors still have BLOs pending for ${showDate(date)}:</div>
+            <ul class="pending-list">${items}</ul>`;
+  }));
+
+/* ---------------- Supervisor admin login ---------------- */
+const SUP_ADMIN_USERNAME = "admin";
+const SUP_ADMIN_PASSWORD = "1234";
+const supLoginOverlay = document.getElementById("supLoginOverlay");
+const supOverlay = document.getElementById("supOverlay");
+const supUser = document.getElementById("supUser");
+const supPass = document.getElementById("supPass");
+const supLoginError = document.getElementById("supLoginError");
+const supPendSelect = document.getElementById("supPendSelect");
+const supPendBtn = document.getElementById("supPendBtn");
+const supResultsWrap = document.getElementById("supResultsWrap");
+SUPERVISORS.forEach((s, i) => {
+  const opt = document.createElement("option");
+  opt.value = i;
+  opt.textContent = `${s.name}  (PS ${s.start}–${s.start + 9})`;
+  supPendSelect.appendChild(opt);
+});
+document.getElementById("openSupLoginBtn").addEventListener("click", () => {
+  supUser.value = "";
+  supPass.value = "";
+  supLoginError.classList.remove("show");
+  supLoginOverlay.classList.remove("hidden");
+});
+document.getElementById("closeSupLoginBtn").addEventListener("click", () => supLoginOverlay.classList.add("hidden"));
+document.getElementById("closeSupBtn").addEventListener("click", () => supOverlay.classList.add("hidden"));
+document.getElementById("supLoginBtn").addEventListener("click", () => {
+  if (supUser.value.trim() === SUP_ADMIN_USERNAME && supPass.value === SUP_ADMIN_PASSWORD) {
+    supLoginOverlay.classList.add("hidden");
+    supResultsWrap.innerHTML = "";
+    supOverlay.classList.remove("hidden");
+  } else {
+    supLoginError.classList.add("show");
+  }
+});
+supPendSelect.addEventListener("change", () => {
+  supPendBtn.disabled = supPendSelect.value === "";
+  supResultsWrap.innerHTML = "";
+});
+supPendBtn.addEventListener("click", () => {
+  const s = SUPERVISORS[supPendSelect.value];
+  if (!s) return;
+  runPendingButton(supPendBtn, "Show my pending BLOs", supResultsWrap, (date, done) => {
+    const pend = supPsList(s).filter((ps) => !done.has(ps));
+    if (!pend.length) return `<div class="all-done">All 10 of your BLOs have submitted for ${showDate(date)}.</div>`;
+    return `<div class="admin-summary">${pend.length} of your 10 BLOs have NOT submitted for ${showDate(date)}:</div>` +
+      `<ul class="pending-list">${pend.map((ps) => `<li>${escHtml(BLO_NAMES[ps] || "BLO")}<span class="range">PS ${ps}</span></li>`).join("")}</ul>`;
+  });
+});
+
 /* ---------------- Admin panel ---------------- */
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "2424";
@@ -1308,7 +1431,7 @@ SUPERVISORS.forEach((sup, i) => {
   const opt = document.createElement("option");
   opt.value = i;
   opt.textContent = `${sup.name}  (PS ${sup.start}–${sup.start + 9})`;
-  carrySupervisor.appendChild(opt);
+  carrySupervisor?.appendChild(opt);
 });
 const adminResultsWrap = document.getElementById("adminResultsWrap");
 
@@ -1325,7 +1448,7 @@ closeAdminBtn.addEventListener("click", () => adminOverlay.classList.add("hidden
 loginBtn.addEventListener("click", () => {
   if (adminUser.value === ADMIN_USERNAME && adminPass.value === ADMIN_PASSWORD) {
     loginOverlay.classList.add("hidden");
-    adminDate.value = today.iso;
+    if (adminDate) adminDate.value = today.iso;
     adminResultsWrap.innerHTML = "";
     adminOverlay.classList.remove("hidden");
   } else {
@@ -1333,7 +1456,7 @@ loginBtn.addEventListener("click", () => {
   }
 });
 
-displayBtn.addEventListener("click", async () => {
+displayBtn?.addEventListener("click", async () => {
   const dateVal = adminDate.value; // yyyy-mm-dd
   if (!dateVal) return;
 
@@ -1384,7 +1507,7 @@ displayBtn.addEventListener("click", async () => {
   }
 });
 
-pendingBtn.addEventListener("click", async () => {
+pendingBtn?.addEventListener("click", async () => {
   const dateVal = adminDate.value;
   if (!dateVal) return;
 
@@ -1684,7 +1807,7 @@ function downloadPdfByPS(rd) {
   doc.save(`BLO_NOTICE_REPORT_PS_WISE_${fileDate(dateVal)}${rd.fileSuffix || ""}.pdf`);
 }
 
-downloadExcelBtn.addEventListener("click", async () => {
+downloadExcelBtn?.addEventListener("click", async () => {
   downloadExcelBtn.disabled = true;
   downloadExcelBtn.textContent = "Loading…";
   adminResultsWrap.innerHTML = "";
@@ -1704,7 +1827,7 @@ downloadExcelBtn.addEventListener("click", async () => {
   }
 });
 
-downloadPdfPctBtn.addEventListener("click", async () => {
+downloadPdfPctBtn?.addEventListener("click", async () => {
   downloadPdfPctBtn.disabled = true;
   downloadPdfPctBtn.textContent = "Loading…";
   adminResultsWrap.innerHTML = "";
@@ -1724,7 +1847,7 @@ downloadPdfPctBtn.addEventListener("click", async () => {
   }
 });
 
-downloadPdfPSBtn.addEventListener("click", async () => {
+downloadPdfPSBtn?.addEventListener("click", async () => {
   downloadPdfPSBtn.disabled = true;
   downloadPdfPSBtn.textContent = "Loading…";
   adminResultsWrap.innerHTML = "";
@@ -1819,7 +1942,7 @@ async function downloadSupervisorReport(rd) {
   URL.revokeObjectURL(link.href);
 }
 
-downloadSupervisorBtn.addEventListener("click", async () => {
+downloadSupervisorBtn?.addEventListener("click", async () => {
   downloadSupervisorBtn.disabled = true;
   downloadSupervisorBtn.textContent = "Loading…";
   adminResultsWrap.innerHTML = "";
@@ -1946,7 +2069,7 @@ async function runSupervisorPdf(btn, label, mode) {
   }
 }
 
-downloadSupervisorPdfAscBtn.addEventListener("click", () =>
+downloadSupervisorPdfAscBtn?.addEventListener("click", () =>
   runSupervisorPdf(downloadSupervisorPdfAscBtn, "Download Supervisor Report PDF (Lowest Avg % First, Coloured)", "asc"));
 
 /* ---------------- Daily Hearing Report (Addl. AERO-wise) ----------------
@@ -2187,9 +2310,9 @@ async function runHearingReport(btn, label, builder) {
   }
 }
 
-downloadHearingXlsxBtn.addEventListener("click", () =>
+downloadHearingXlsxBtn?.addEventListener("click", () =>
   runHearingReport(downloadHearingXlsxBtn, "Download Daily Hearing Report (Excel)", downloadHearingExcel));
-downloadHearingPdfBtn.addEventListener("click", () =>
+downloadHearingPdfBtn?.addEventListener("click", () =>
   runHearingReport(downloadHearingPdfBtn, "Download Daily Hearing Report (PDF)", downloadHearingPdf));
 
 /* "Insert previous entry +1": for a supervisor who can't submit (e.g. lost
@@ -2594,7 +2717,7 @@ async function runDistrictReport(btn, builder) {
 eciButtons[3].addEventListener("click", () => runDistrictReport(eciButtons[3], downloadDistrictExcel));
 eciButtons[4].addEventListener("click", () => runDistrictReport(eciButtons[4], downloadDistrictPdf));
 
-carryForwardBtn.addEventListener("click", async () => {
+carryForwardBtn?.addEventListener("click", async () => {
   const sup = SUPERVISORS[carrySupervisor.value];
   if (!sup) return;
   carryForwardBtn.disabled = true;
@@ -2651,7 +2774,7 @@ carryForwardBtn.addEventListener("click", async () => {
   }
 });
 
-downloadAllBtn.addEventListener("click", async () => {
+downloadAllBtn?.addEventListener("click", async () => {
   downloadAllBtn.disabled = true;
   downloadAllBtn.textContent = "Loading…";
   adminResultsWrap.innerHTML = "";
