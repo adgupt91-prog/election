@@ -1078,6 +1078,16 @@ function buildBloRows(psNumbers) {
       </div>
       <div class="pair" style="align-items:end;">${field(ASDD_FIELDS[0])}${field(ASDD_FIELDS[1])}</div>
       <div class="pair" style="margin-top:10px; align-items:end;">${field(ASDD_FIELDS[2])}${field(ASDD_FIELDS[3])}</div>
+      <div class="pair" style="margin-top:10px; align-items:end;">
+        <div class="field">
+          <label>Total Form-6 Received in respect of ASDD List</label>
+          <input type="number" min="0" step="1" inputmode="numeric" class="f6" data-key="form6Asdd" value="0" />
+        </div>
+        <div class="field">
+          <label>Total Form-6 Received outside of ASDD List</label>
+          <input type="number" min="0" step="1" inputmode="numeric" class="f6" data-key="form6Outside" value="0" />
+        </div>
+      </div>
       <div class="mismatch-note hidden">⚠ Verified cannot be more than the total shown in brackets.</div>
     `;
     bloList.appendChild(row);
@@ -1195,8 +1205,9 @@ submitBtn.addEventListener("click", async () => {
 
   const blos = [];
   bloList.querySelectorAll(".blo-row").forEach((row) => {
-    const v = (key) => Number(row.querySelector(`.asdd[data-key="${key}"]`).value) || 0;
-    blos.push({ ps: Number(row.dataset.ps), death: v("death"), absent: v("absent"), shifted: v("shifted"), enrolled: v("enrolled") });
+    const v = (key) => Number(row.querySelector(`[data-key="${key}"]`).value) || 0;
+    blos.push({ ps: Number(row.dataset.ps), death: v("death"), absent: v("absent"), shifted: v("shifted"), enrolled: v("enrolled"),
+                form6Asdd: v("form6Asdd"), form6Outside: v("form6Outside") });
   });
 
   // type "asdd" -> saved by the ASDD part of Code.gs (the notice data and admin reports are untouched)
@@ -1260,7 +1271,7 @@ function lockFormAfterSubmit(supervisor, ps, savedIsoDate) {
   // Freeze everything so the entry can't be accidentally resubmitted.
   supervisorSelect.disabled = true;
   bloSelect.disabled = true;
-  bloList.querySelectorAll(".asdd").forEach((el) => { el.disabled = true; });
+  bloList.querySelectorAll(".asdd, .f6").forEach((el) => { el.disabled = true; });
   submitBtn.disabled = true;
   submitBtn.textContent = "Submitted ✓";
 }
