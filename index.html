@@ -1382,7 +1382,17 @@ async function downloadAsddSheet(btn, kind, label) {
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     const mime = kind === "pdf" ? "application/pdf"
       : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    let out = bytes;
+    if (kind === "xlsx") {
+      // Google exports every tab; keep only the Supervisor-wise one.
+      const keep = data.sheet || "AC-24 Supervisor-wise";
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(bytes.buffer);
+      if (!wb.getWorksheet(keep)) throw new Error("Tab not found in export: " + keep);
+      wb.worksheets.filter((ws) => ws.name !== keep).forEach((ws) => wb.removeWorksheet(ws.id));
+      out = await wb.xlsx.writeBuffer();
+    }
+    const url = URL.createObjectURL(new Blob([out], { type: mime }));
     const a = document.createElement("a");
     a.href = url;
     a.download = data.name;
@@ -1392,7 +1402,8 @@ async function downloadAsddSheet(btn, kind, label) {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(data.name)}.</div>`;
   } catch (err) {
-    wrap.innerHTML = `<div class="admin-empty">Could not download the sheet. Check your connection and try again.</div>`;
+    wrap.innerHTML = `<div class="admin-empty">Could not download the sheet. Check your connection and try again.` +
+      `<br/><small>${escHtml(String((err && err.message) || err))}</small></div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = label;
