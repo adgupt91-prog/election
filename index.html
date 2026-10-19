@@ -565,6 +565,11 @@
       <button type="button" class="secondary" id="asddPendSupBtn" style="flex:1 1 200px;">Show Pending BLO Supervisor</button>
     </div>
 
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+      <button type="button" class="secondary" id="asddXlsxBtn" style="flex:1 1 200px; background:#15803d; color:#ffffff;">Download Supervisor-wise Sheet (Excel)</button>
+      <button type="button" class="secondary" id="asddPdfBtn" style="flex:1 1 200px; background:#b91c1c; color:#ffffff;">Download Supervisor-wise Sheet (PDF)</button>
+    </div>
+
     <div class="admin-toolbar" style="margin-bottom:16px;">
       <div class="field">
         <label for="redThreshold">Mark RED if below</label>
@@ -1361,6 +1366,42 @@ document.getElementById("asddPendSupBtn").addEventListener("click", (ev) =>
     return `<div class="admin-summary">${rows.length} of ${SUPERVISORS.length} supervisors still have BLOs pending for ${showDate(date)}:</div>
             <ul class="pending-list">${items}</ul>`;
   }));
+
+/* ---------------- Download the Google Sheet "AC-24 Supervisor-wise" tab ---------------- */
+async function downloadAsddSheet(btn, kind, label) {
+  const wrap = document.getElementById("adminResultsWrap");
+  btn.disabled = true;
+  btn.textContent = "Preparing…";
+  wrap.innerHTML = "";
+  try {
+    const res = await fetch(SCRIPT_URL + "?asddExport=" + kind + "&t=" + Date.now());
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error((data && data.error) || "Unknown error");
+    const bin = atob(data.b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const mime = kind === "pdf" ? "application/pdf"
+      : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = data.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(data.name)}.</div>`;
+  } catch (err) {
+    wrap.innerHTML = `<div class="admin-empty">Could not download the sheet. Check your connection and try again.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+document.getElementById("asddXlsxBtn").addEventListener("click", (ev) =>
+  downloadAsddSheet(ev.currentTarget, "xlsx", "Download Supervisor-wise Sheet (Excel)"));
+document.getElementById("asddPdfBtn").addEventListener("click", (ev) =>
+  downloadAsddSheet(ev.currentTarget, "pdf", "Download Supervisor-wise Sheet (PDF)"));
 
 /* ---------------- Supervisor admin login ---------------- */
 const SUP_ADMIN_USERNAME = "admin";
