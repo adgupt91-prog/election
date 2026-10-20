@@ -546,13 +546,20 @@
       <button type="button" class="secondary" id="asddPendSupBtn" style="flex:1 1 200px;">Show Pending BLO Supervisor</button>
     </div>
 
+    <div class="admin-toolbar" style="margin-bottom:10px;">
+      <div class="field">
+        <label for="reportDate">Report date (for the reports below)</label>
+        <input type="date" id="reportDate" style="width:100%; padding:10px 12px; font-size:15px; font-family:inherit; border:1px solid var(--line); border-radius:var(--radius); background:var(--white); color:var(--ink);" />
+      </div>
+    </div>
+
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
       <button type="button" class="secondary" id="asddXlsxBtn" style="flex:1 1 200px; background:#15803d; color:#ffffff;">Download Supervisor-wise Sheet (Excel)</button>
       <button type="button" class="secondary" id="asddPdfBtn" style="flex:1 1 200px; background:#b91c1c; color:#ffffff;">Download Supervisor-wise Sheet (PDF)</button>
     </div>
 
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
-      <button type="button" class="secondary" id="asddBloWiseBtn" style="flex:1 1 200px; background:#6d28d9; color:#ffffff;">BLO-wise Report (PDF) — Today's Entries, PS-wise</button>
+      <button type="button" class="secondary" id="asddBloWiseBtn" style="flex:1 1 200px; background:#6d28d9; color:#ffffff;">BLO-wise Report (PDF) — PS-wise</button>
     </div>
 
     <div class="admin-toolbar" style="margin-bottom:16px;">
@@ -1358,7 +1365,15 @@ async function downloadAsddSheet(btn, kind, label) {
   btn.disabled = true;
   btn.textContent = "Preparing…";
   wrap.innerHTML = "";
+  const iso = getReportDate();
   try {
+    if (iso !== today.iso) {
+      // Earlier date: the live sheet only holds today's figures, so rebuild that day's
+      // supervisor-wise sheet from the entries saved on that date.
+      const name = await downloadPastSupervisorReport(kind, iso);
+      wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(name)} (rebuilt from the entries saved on ${showDate(iso)}).</div>`;
+      return;
+    }
     const res = await fetch(SCRIPT_URL + "?asddExport=" + kind + "&t=" + Date.now());
     const data = await res.json();
     if (!data || !data.ok) throw new Error((data && data.error) || "Unknown error");
@@ -1421,7 +1436,18 @@ const cellNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-async function fetchTodayAsddEntries() {
+/* ---- Report date picker (defaults to today; future dates not allowed) ---- */
+const reportDateInput = document.getElementById("reportDate");
+reportDateInput.value = today.iso;
+reportDateInput.max = today.iso;
+function getReportDate() {
+  const v = reportDateInput.value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > today.iso) { reportDateInput.value = today.iso; return today.iso; }
+  return v;
+}
+
+// Whole-spreadsheet Excel export from the server (both tabs), loaded with ExcelJS.
+async function fetchExportWorkbook() {
   const res = await fetch(SCRIPT_URL + "?asddExport=xlsx&t=" + Date.now());
   const data = await res.json();
   if (!data || !data.ok) throw new Error((data && data.error) || "Unknown error");
@@ -1430,13 +1456,22 @@ async function fetchTodayAsddEntries() {
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(bytes.buffer);
+  return { wb, sheetName: data.sheet || "AC-24 Supervisor-wise" };
+}
+
+async function fetchAsddEntries(iso) {
+  const { wb } = await fetchExportWorkbook();
+  return asddEntriesFromWorkbook(wb, iso);
+}
+
+function asddEntriesFromWorkbook(wb, iso) {
   const ws = wb.getWorksheet("ASDD Responses");
   if (!ws) throw new Error('Tab "ASDD Responses" not found');
   const byPs = {};
   ws.eachRow((row, rowNo) => {
     if (rowNo === 1) return;
     const v = (c) => row.getCell(c).value;
-    if (cellDateIso(v(2)) !== today.iso) return;
+    if (cellDateIso(v(2)) !== iso) return;
     const ps = cellNum(v(4));
     if (!ps) return;
     byPs[ps] = {                                              // later rows overwrite earlier ones
@@ -1448,11 +1483,11 @@ async function fetchTodayAsddEntries() {
   return Object.values(byPs).sort((a, b) => a.ps - b.ps);
 }
 
-function downloadBloWisePdf(entries) {
+function downloadBloWisePdf(entries, iso) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
-  const [y, m, d] = today.iso.split("-");
+  const [y, m, d] = iso.split("-");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.text("AC-24 PATEL NAGAR — BLO-wise ASDD Verification Report (PS-wise)", pageW / 2, 30, { align: "center" });
@@ -1460,7 +1495,7 @@ function downloadBloWisePdf(entries) {
   doc.setFont("helvetica", "bold");
   doc.setTextColor(0, 0, 0);
   const totalPs = Object.keys(ASDD_TOTALS).length;
-  doc.text(`Dated: ${d}.${m}.${y}     ·     Entries received today: ${entries.length} of ${totalPs} BLOs`, pageW / 2, 46, { align: "center" });
+  doc.text(`Dated: ${d}.${m}.${y}     ·     Entries received: ${entries.length} of ${totalPs} BLOs`, pageW / 2, 46, { align: "center" });
 
   const t = { ver: [0, 0, 0, 0], asdd: 0, f6a: 0, f6o: 0 };
   const body = entries.map((e, i) => {
@@ -1497,7 +1532,7 @@ function downloadBloWisePdf(entries) {
       doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageW - 24, doc.internal.pageSize.getHeight() - 12, { align: "right" });
     },
   });
-  const name = `BLO_WISE_ASDD_REPORT_${fileDate(today.iso)}.pdf`;
+  const name = `BLO_WISE_ASDD_REPORT_${fileDate(iso)}.pdf`;
   doc.save(name);
   return name;
 }
@@ -1509,13 +1544,14 @@ document.getElementById("asddBloWiseBtn").addEventListener("click", async (ev) =
   btn.textContent = "Preparing…";
   wrap.innerHTML = "";
   try {
-    const entries = await fetchTodayAsddEntries();
+    const iso = getReportDate();
+    const entries = await fetchAsddEntries(iso);
     if (!entries.length) {
-      wrap.innerHTML = `<div class="admin-empty">No BLO entries yet for today (${showDate(today.iso)}).</div>`;
+      wrap.innerHTML = `<div class="admin-empty">No BLO entries found for ${showDate(iso)}.</div>`;
       return;
     }
-    const name = downloadBloWisePdf(entries);
-    wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(name)} — ${entries.length} BLO entries for today.</div>`;
+    const name = downloadBloWisePdf(entries, iso);
+    wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(name)} — ${entries.length} BLO entries for ${showDate(iso)}.</div>`;
   } catch (err) {
     wrap.innerHTML = `<div class="admin-empty">Could not make the BLO-wise report. Check your connection and try again.` +
       `<br/><small>${escHtml(String((err && err.message) || err))}</small></div>`;
@@ -1524,6 +1560,118 @@ document.getElementById("asddBloWiseBtn").addEventListener("click", async (ev) =
     btn.textContent = label;
   }
 });
+
+/* ---- Supervisor-wise sheet for an EARLIER date ----
+   Starts from the live "AC-24 Supervisor-wise" tab (same layout, names, totals in A–J),
+   then fills Verified (K–N), Total Verified (O), Pending (P), % (Q) and Form-6 (R–S)
+   from the entries saved on that date, plus the TOTAL row and the "Dated:" cell. */
+function supervisorOfPsClient(ps) {
+  const s = SUPERVISORS.find((x) => ps >= x.start && ps <= x.start + 9);
+  return s ? s.name : "";
+}
+
+function fillSupervisorSheetForDate(ws, entries, iso) {
+  const sums = {};                                     // name -> [d, a, s, e, f6a, f6o]
+  entries.forEach((e) => {
+    const name = supervisorOfPsClient(e.ps);
+    const t = sums[name] || (sums[name] = [0, 0, 0, 0, 0, 0]);
+    [e.death, e.absent, e.shifted, e.enrolled, e.form6Asdd, e.form6Outside].forEach((x, i) => { t[i] += x; });
+  });
+  const tot = [0, 0, 0, 0, 0, 0];
+  const staticTot = [0, 0, 0, 0, 0, 0];                // E..J (parts, total ASDD, death, absent, shifted, enrolled)
+  let totalRow = null, totF = 0;
+  for (let r = 4; r <= ws.rowCount; r++) {
+    const name = String(ws.getCell(r, 2).value == null ? "" : ws.getCell(r, 2).value).trim().toUpperCase();
+    if (!name) continue;
+    if (name === "TOTAL") { totalRow = r; break; }
+    const s = sums[SUPERVISORS.map((x) => x.name).find((n) => n.toUpperCase() === name)] || [0, 0, 0, 0, 0, 0];
+    const F = cellNum(ws.getCell(r, 6).value);
+    const O = s[0] + s[1] + s[2] + s[3];
+    [s[0], s[1], s[2], s[3]].forEach((x, i) => { ws.getCell(r, 11 + i).value = x; });   // K..N
+    ws.getCell(r, 15).value = O;                                                          // O
+    ws.getCell(r, 16).value = F - O;                                                      // P
+    ws.getCell(r, 17).value = F ? O / F : 0;                                              // Q
+    ws.getCell(r, 18).value = s[4];                                                       // R
+    ws.getCell(r, 19).value = s[5];                                                       // S
+    s.forEach((x, i) => { tot[i] += x; });
+    for (let c = 5; c <= 10; c++) staticTot[c - 5] += cellNum(ws.getCell(r, c).value);
+    totF += F;
+  }
+  if (totalRow) {
+    const O = tot[0] + tot[1] + tot[2] + tot[3];
+    [tot[0], tot[1], tot[2], tot[3]].forEach((x, i) => { ws.getCell(totalRow, 11 + i).value = x; });
+    ws.getCell(totalRow, 15).value = O;
+    ws.getCell(totalRow, 16).value = totF - O;
+    ws.getCell(totalRow, 17).value = totF ? O / totF : 0;
+    ws.getCell(totalRow, 18).value = tot[4];
+    ws.getCell(totalRow, 19).value = tot[5];
+    // TOTAL row E–J: written as plain numbers (the export keeps them as formulas without values)
+    for (let c = 5; c <= 10; c++) ws.getCell(totalRow, c).value = staticTot[c - 5];
+  }
+  const [y, m, d] = iso.split("-");
+  ws.getCell(1, 17).value = "Dated: " + d + "." + m + "." + y;
+  return totalRow;
+}
+
+async function downloadPastSupervisorReport(kind, iso) {
+  const { wb, sheetName } = await fetchExportWorkbook();
+  const entries = asddEntriesFromWorkbook(wb, iso);
+  const ws = wb.getWorksheet(sheetName);
+  if (!ws) throw new Error("Tab not found in export: " + sheetName);
+  const totalRow = fillSupervisorSheetForDate(ws, entries, iso);
+  const base = `AC-24_SUPERVISOR_WISE_ASDD_REPORT_${fileDate(iso)}`;
+
+  if (kind === "xlsx") {
+    wb.worksheets.filter((w) => w.name !== sheetName).forEach((w) => wb.removeWorksheet(w.id));
+    const out = await wb.xlsx.writeBuffer();
+    const url = URL.createObjectURL(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = base + ".xlsx";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return base + ".xlsx";
+  }
+
+  // PDF: same 19 columns as the sheet
+  const val = (r, c) => {
+    let v = ws.getCell(r, c).value;
+    if (v && typeof v === "object") v = (v.result !== undefined) ? v.result : (v.richText ? v.richText.map((t) => t.text).join("") : "");
+    return v == null ? "" : v;
+  };
+  const fmtN = (v) => (typeof v === "number" ? v.toLocaleString("en-IN") : String(v));
+  const head = [];
+  for (let c = 1; c <= 19; c++) head.push(String(val(3, c)));
+  const body = [];
+  const last = totalRow || ws.rowCount;
+  for (let r = 4; r <= last; r++) {
+    if (!String(val(r, 2)).trim()) continue;
+    const row = [];
+    for (let c = 1; c <= 19; c++) {
+      const v = val(r, c);
+      row.push(c === 17 ? ((Number(v) || 0) * 100).toFixed(2) + "%" : (c === 3 ? String(v) : fmtN(v)));
+    }
+    body.push(row);
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(12);
+  doc.text(String(val(1, 1)), pageW / 2, 28, { align: "center" });
+  doc.setFontSize(10);
+  doc.text(String(val(1, 17)), pageW - 20, 44, { align: "right" });
+  const isTotal = (i) => String(body[i][1]).trim().toUpperCase() === "TOTAL";
+  doc.autoTable({
+    head: [head], body, startY: 52, margin: { left: 20, right: 20 },
+    styles: { halign: "center", valign: "middle", fontSize: 7.5, fontStyle: "bold", textColor: [0, 0, 0], lineWidth: 0.6, lineColor: [60, 60, 60], cellPadding: 2.5 },
+    headStyles: { fillColor: [22, 50, 79], textColor: [255, 255, 255], fontSize: 7 },
+    columnStyles: { 1: { halign: "left" } },
+    didParseCell: (data) => { if (data.section === "body" && isTotal(data.row.index)) data.cell.styles.fillColor = [229, 231, 235]; },
+  });
+  doc.save(base + ".pdf");
+  return base + ".pdf";
+}
 
 // Red warning triangle with "!" (drawn as SVG so it stays red on every phone)
 const RED_WARN_ICON = `<svg width="18" height="16" viewBox="0 0 24 21" aria-label="Pending" role="img" style="flex:none">
