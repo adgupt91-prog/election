@@ -1457,7 +1457,8 @@ function downloadBloWisePdf(entries) {
   doc.setFontSize(14);
   doc.text("AC-24 PATEL NAGAR — BLO-wise ASDD Verification Report (PS-wise)", pageW / 2, 30, { align: "center" });
   doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
   const totalPs = Object.keys(ASDD_TOTALS).length;
   doc.text(`Dated: ${d}.${m}.${y}     ·     Entries received today: ${entries.length} of ${totalPs} BLOs`, pageW / 2, 46, { align: "center" });
 
@@ -1485,11 +1486,13 @@ function downloadBloWisePdf(entries) {
     showFoot: "lastPage",
     startY: 58,
     margin: { left: 24, right: 24 },
-    styles: { halign: "center", valign: "middle", fontSize: 8.5, lineWidth: 0.5, lineColor: [140, 133, 120], cellPadding: 3 },
+    styles: { halign: "center", valign: "middle", fontSize: 8.5, fontStyle: "bold", textColor: [0, 0, 0], lineWidth: 0.6, lineColor: [60, 60, 60], cellPadding: 3 },
     headStyles: { fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5 },
     footStyles: { fillColor: [229, 231, 235], textColor: [0, 0, 0], fontStyle: "bold" },
-    columnStyles: { 1: { fontStyle: "bold" }, 2: { halign: "left", fontStyle: "bold" }, 3: { halign: "left" } },
+    columnStyles: { 2: { halign: "left" }, 3: { halign: "left" } },
     didDrawPage: () => {
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
       doc.setFontSize(8);
       doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageW - 24, doc.internal.pageSize.getHeight() - 12, { align: "right" });
     },
