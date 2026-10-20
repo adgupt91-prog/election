@@ -551,6 +551,10 @@
       <button type="button" class="secondary" id="asddPdfBtn" style="flex:1 1 200px; background:#b91c1c; color:#ffffff;">Download Supervisor-wise Sheet (PDF)</button>
     </div>
 
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+      <button type="button" class="secondary" id="asddBloWiseBtn" style="flex:1 1 200px; background:#6d28d9; color:#ffffff;">BLO-wise Report (PDF) — Today's Entries, PS-wise</button>
+    </div>
+
     <div class="admin-toolbar" style="margin-bottom:16px;">
       <div class="field">
         <label for="redThreshold">Mark RED if below</label>
@@ -1394,6 +1398,129 @@ document.getElementById("asddXlsxBtn").addEventListener("click", (ev) =>
   downloadAsddSheet(ev.currentTarget, "xlsx", "Download Supervisor-wise Sheet (Excel)"));
 document.getElementById("asddPdfBtn").addEventListener("click", (ev) =>
   downloadAsddSheet(ev.currentTarget, "pdf", "Download Supervisor-wise Sheet (PDF)"));
+
+/* ---------------- BLO-wise report: today's entries, PS-wise, as PDF ----------------
+   Uses the same Excel export as the button above (no extra server code): reads the
+   "ASDD Responses" tab and keeps only rows dated today, one per PS (latest wins). */
+function cellDateIso(v) {
+  if (v instanceof Date) {
+    // Sheets dates arrive as UTC midnight of the calendar day
+    return v.toISOString().slice(0, 10);
+  }
+  if (v && typeof v === "object" && v.result !== undefined) return cellDateIso(v.result); // formula cell
+  const s = String(v == null ? "" : v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);          // M/D/YYYY (US-style export)
+  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  return "";
+}
+const cellNum = (v) => {
+  if (v && typeof v === "object" && v.result !== undefined) v = v.result;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+async function fetchTodayAsddEntries() {
+  const res = await fetch(SCRIPT_URL + "?asddExport=xlsx&t=" + Date.now());
+  const data = await res.json();
+  if (!data || !data.ok) throw new Error((data && data.error) || "Unknown error");
+  const bin = atob(data.b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(bytes.buffer);
+  const ws = wb.getWorksheet("ASDD Responses");
+  if (!ws) throw new Error('Tab "ASDD Responses" not found');
+  const byPs = {};
+  ws.eachRow((row, rowNo) => {
+    if (rowNo === 1) return;
+    const v = (c) => row.getCell(c).value;
+    if (cellDateIso(v(2)) !== today.iso) return;
+    const ps = cellNum(v(4));
+    if (!ps) return;
+    byPs[ps] = {                                              // later rows overwrite earlier ones
+      ps, supervisor: String(v(3) == null ? "" : v(3)).trim(),
+      death: cellNum(v(5)), absent: cellNum(v(6)), shifted: cellNum(v(7)), enrolled: cellNum(v(8)),
+      form6Asdd: cellNum(v(9)), form6Outside: cellNum(v(10)),
+    };
+  });
+  return Object.values(byPs).sort((a, b) => a.ps - b.ps);
+}
+
+function downloadBloWisePdf(entries) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const [y, m, d] = today.iso.split("-");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text("AC-24 PATEL NAGAR — BLO-wise ASDD Verification Report (PS-wise)", pageW / 2, 30, { align: "center" });
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  const totalPs = Object.keys(ASDD_TOTALS).length;
+  doc.text(`Dated: ${d}.${m}.${y}     ·     Entries received today: ${entries.length} of ${totalPs} BLOs`, pageW / 2, 46, { align: "center" });
+
+  const t = { ver: [0, 0, 0, 0], asdd: 0, f6a: 0, f6o: 0 };
+  const body = entries.map((e, i) => {
+    const tot = ASDD_TOTALS[e.ps] || [0, 0, 0, 0];
+    const asdd = tot[0] + tot[1] + tot[2] + tot[3];
+    const ver = e.death + e.absent + e.shifted + e.enrolled;
+    [e.death, e.absent, e.shifted, e.enrolled].forEach((x, k) => { t.ver[k] += x; });
+    t.asdd += asdd; t.f6a += e.form6Asdd; t.f6o += e.form6Outside;
+    return [
+      i + 1, e.ps, BLO_NAMES[e.ps] || "", e.supervisor,
+      `${e.death} / ${tot[0]}`, `${e.absent} / ${tot[1]}`, `${e.shifted} / ${tot[2]}`, `${e.enrolled} / ${tot[3]}`,
+      ver, asdd, (asdd ? (ver / asdd) * 100 : 0).toFixed(2) + "%", e.form6Asdd, e.form6Outside,
+    ];
+  });
+  const verAll = t.ver.reduce((a, b) => a + b, 0);
+  doc.autoTable({
+    head: [["S.No", "PS", "BLO Name", "Supervisor",
+            "Verified\nDeath", "Verified\nAbsent", "Verified\nShifted", "Verified\nAlready enrolled",
+            "Total\nVerified", "Total\nASDD", "%\nVerified", "Form-6 in r/o\nASDD List", "Form-6 outside\nASDD List"]],
+    body,
+    foot: [["", "", "TOTAL", "", ...t.ver.map(String), verAll, t.asdd,
+            (t.asdd ? (verAll / t.asdd) * 100 : 0).toFixed(2) + "%", t.f6a, t.f6o]],
+    showFoot: "lastPage",
+    startY: 58,
+    margin: { left: 24, right: 24 },
+    styles: { halign: "center", valign: "middle", fontSize: 8.5, lineWidth: 0.5, lineColor: [140, 133, 120], cellPadding: 3 },
+    headStyles: { fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5 },
+    footStyles: { fillColor: [229, 231, 235], textColor: [0, 0, 0], fontStyle: "bold" },
+    columnStyles: { 1: { fontStyle: "bold" }, 2: { halign: "left", fontStyle: "bold" }, 3: { halign: "left" } },
+    didDrawPage: () => {
+      doc.setFontSize(8);
+      doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageW - 24, doc.internal.pageSize.getHeight() - 12, { align: "right" });
+    },
+  });
+  const name = `BLO_WISE_ASDD_REPORT_${fileDate(today.iso)}.pdf`;
+  doc.save(name);
+  return name;
+}
+
+document.getElementById("asddBloWiseBtn").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget, label = btn.textContent;
+  const wrap = document.getElementById("adminResultsWrap");
+  btn.disabled = true;
+  btn.textContent = "Preparing…";
+  wrap.innerHTML = "";
+  try {
+    const entries = await fetchTodayAsddEntries();
+    if (!entries.length) {
+      wrap.innerHTML = `<div class="admin-empty">No BLO entries yet for today (${showDate(today.iso)}).</div>`;
+      return;
+    }
+    const name = downloadBloWisePdf(entries);
+    wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(name)} — ${entries.length} BLO entries for today.</div>`;
+  } catch (err) {
+    wrap.innerHTML = `<div class="admin-empty">Could not make the BLO-wise report. Check your connection and try again.` +
+      `<br/><small>${escHtml(String((err && err.message) || err))}</small></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
 
 // Red warning triangle with "!" (drawn as SVG so it stays red on every phone)
 const RED_WARN_ICON = `<svg width="18" height="16" viewBox="0 0 24 21" aria-label="Pending" role="img" style="flex:none">
