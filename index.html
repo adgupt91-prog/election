@@ -493,29 +493,10 @@
 
 <footer>
   Enter your cumulative verified counts to date, not today's increment. Data is recorded against today's date automatically.
-  <button type="button" class="admin-link" id="openSupLoginBtn">Supervisor Admin Login</button>
+  <button type="button" class="admin-link" id="openSupLoginBtn" style="font-size:17px; font-weight:600; color:var(--ink);">Supervisor Login</button>
   <br /><br /><br /><br />
   <button type="button" class="admin-link" id="openAdminBtn" style="margin-top:0;">Admin</button>
 </footer>
-
-<!-- Supervisor admin login overlay -->
-<div class="overlay hidden" id="supLoginOverlay">
-  <div class="overlay-card">
-    <button type="button" class="overlay-close" id="closeSupLoginBtn">&times;</button>
-    <h2>Supervisor Admin Login</h2>
-    <p class="sub">For BLO supervisors — see which of your BLOs have not filled the form today.</p>
-    <div class="field">
-      <label for="supUser">Username</label>
-      <input type="text" id="supUser" autocomplete="off" />
-    </div>
-    <div class="field">
-      <label for="supPass">Password</label>
-      <input type="text" id="supPass" autocomplete="off" />
-    </div>
-    <button type="button" class="secondary" id="supLoginBtn">Log in</button>
-    <div class="login-error" id="supLoginError">Incorrect username or password.</div>
-  </div>
-</div>
 
 <!-- Supervisor admin panel overlay -->
 <div class="overlay hidden" id="supOverlay">
@@ -1415,13 +1396,7 @@ document.getElementById("asddPdfBtn").addEventListener("click", (ev) =>
   downloadAsddSheet(ev.currentTarget, "pdf", "Download Supervisor-wise Sheet (PDF)"));
 
 /* ---------------- Supervisor admin login ---------------- */
-const SUP_ADMIN_USERNAME = "admin";
-const SUP_ADMIN_PASSWORD = "1234";
-const supLoginOverlay = document.getElementById("supLoginOverlay");
 const supOverlay = document.getElementById("supOverlay");
-const supUser = document.getElementById("supUser");
-const supPass = document.getElementById("supPass");
-const supLoginError = document.getElementById("supLoginError");
 const supPendSelect = document.getElementById("supPendSelect");
 const supPendBtn = document.getElementById("supPendBtn");
 const supResultsWrap = document.getElementById("supResultsWrap");
@@ -1431,23 +1406,12 @@ SUPERVISORS.forEach((s, i) => {
   opt.textContent = `${s.name}  (PS ${s.start}–${s.start + 9})`;
   supPendSelect.appendChild(opt);
 });
+// No username/password: the link opens the supervisor panel directly.
 document.getElementById("openSupLoginBtn").addEventListener("click", () => {
-  supUser.value = "";
-  supPass.value = "";
-  supLoginError.classList.remove("show");
-  supLoginOverlay.classList.remove("hidden");
+  supResultsWrap.innerHTML = "";
+  supOverlay.classList.remove("hidden");
 });
-document.getElementById("closeSupLoginBtn").addEventListener("click", () => supLoginOverlay.classList.add("hidden"));
 document.getElementById("closeSupBtn").addEventListener("click", () => supOverlay.classList.add("hidden"));
-document.getElementById("supLoginBtn").addEventListener("click", () => {
-  if (supUser.value.trim() === SUP_ADMIN_USERNAME && supPass.value === SUP_ADMIN_PASSWORD) {
-    supLoginOverlay.classList.add("hidden");
-    supResultsWrap.innerHTML = "";
-    supOverlay.classList.remove("hidden");
-  } else {
-    supLoginError.classList.add("show");
-  }
-});
 supPendSelect.addEventListener("change", () => {
   supPendBtn.disabled = supPendSelect.value === "";
   supResultsWrap.innerHTML = "";
