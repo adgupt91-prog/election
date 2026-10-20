@@ -546,6 +546,11 @@
       <button type="button" class="secondary" id="asddPendSupBtn" style="flex:1 1 200px;">Show Pending BLO Supervisor</button>
     </div>
 
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+      <button type="button" class="secondary" id="pendBloPdfBtn" style="flex:1 1 200px; background:#c2410c; color:#ffffff;">Pending BLO — Today (PDF)</button>
+      <button type="button" class="secondary" id="pendSupPdfBtn" style="flex:1 1 200px; background:#c2410c; color:#ffffff;">Pending BLO Supervisor — Today (PDF)</button>
+    </div>
+
     <div class="admin-toolbar" style="margin-bottom:10px;">
       <div class="field">
         <label for="reportDate">Report date (for the reports below)</label>
@@ -560,11 +565,6 @@
 
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
       <button type="button" class="secondary" id="asddBloWiseBtn" style="flex:1 1 200px; background:#6d28d9; color:#ffffff;">BLO-wise Report (PDF) — PS-wise</button>
-    </div>
-
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
-      <button type="button" class="secondary" id="pendBloPdfBtn" style="flex:1 1 200px; background:#c2410c; color:#ffffff;">Pending BLO (PDF)</button>
-      <button type="button" class="secondary" id="pendSupPdfBtn" style="flex:1 1 200px; background:#c2410c; color:#ffffff;">Pending BLO Supervisor (PDF)</button>
     </div>
 
     <div class="admin-toolbar" style="margin-bottom:16px;">
@@ -1764,7 +1764,7 @@ function downloadPendingSupPdf(iso, P) {
     btn.textContent = "Preparing…";
     wrap.innerHTML = "";
     try {
-      const iso = getReportDate();
+      const iso = today.iso;                       // pending lists are always for today
       const P = await pendingForDate(iso);
       const name = fn(iso, P);
       wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(name)} — ${P.pendCount} of ${P.total} BLOs pending on ${showDate(iso)}.</div>`;
