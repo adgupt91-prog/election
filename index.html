@@ -562,6 +562,11 @@
       <button type="button" class="secondary" id="asddBloWiseBtn" style="flex:1 1 200px; background:#6d28d9; color:#ffffff;">BLO-wise Report (PDF) — PS-wise</button>
     </div>
 
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+      <button type="button" class="secondary" id="pendBloPdfBtn" style="flex:1 1 200px; background:#c2410c; color:#ffffff;">Pending BLO (PDF)</button>
+      <button type="button" class="secondary" id="pendSupPdfBtn" style="flex:1 1 200px; background:#c2410c; color:#ffffff;">Pending BLO Supervisor (PDF)</button>
+    </div>
+
     <div class="admin-toolbar" style="margin-bottom:16px;">
       <div class="field">
         <label for="redThreshold">Mark RED if below</label>
@@ -1672,6 +1677,106 @@ async function downloadPastSupervisorReport(kind, iso) {
   doc.save(base + ".pdf");
   return base + ".pdf";
 }
+
+/* ---------------- Pending BLO / Pending Supervisor as PDF (for the Report date) ---------------- */
+function pendingPdfDoc(title, iso, sub) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const [y, m, d] = iso.split("-");
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(13);
+  doc.text(title, pageW / 2, 32, { align: "center" });
+  doc.setFontSize(10);
+  doc.text(`Dated: ${d}.${m}.${y}     ·     ${sub}`, pageW / 2, 48, { align: "center" });
+  return doc;
+}
+const PENDING_TABLE_STYLE = {
+  styles: { halign: "center", valign: "middle", fontSize: 9.5, fontStyle: "bold", textColor: [0, 0, 0], lineWidth: 0.6, lineColor: [60, 60, 60], cellPadding: 4 },
+  headStyles: { fillColor: [22, 50, 79], textColor: [255, 255, 255], fontStyle: "bold" },
+  margin: { left: 30, right: 30 },
+};
+function pendingPageNumbers(doc) {
+  const n = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(`Page ${i} of ${n}`, doc.internal.pageSize.getWidth() - 30, doc.internal.pageSize.getHeight() - 14, { align: "right" });
+  }
+}
+
+async function pendingForDate(iso) {
+  const entries = await fetchAsddEntries(iso);
+  const done = new Set(entries.map((e) => Number(e.ps)));
+  const total = SUPERVISORS.reduce((n, s) => n + supPsList(s).length, 0);
+  const rows = supOrder().map((s) => ({ s, n: supPsList(s).length, pend: supPsList(s).filter((ps) => !done.has(ps)) }));
+  return { total, done, rows, pendCount: rows.reduce((n, r) => n + r.pend.length, 0) };
+}
+
+function downloadPendingBloPdf(iso, P) {
+  const doc = pendingPdfDoc("AC-24 PATEL NAGAR — Pending BLOs (form not filled)", iso,
+    `${P.pendCount} of ${P.total} BLOs pending`);
+  const body = [];
+  let i = 0;
+  P.rows.forEach((r) => r.pend.forEach((ps) => body.push([++i, r.s.name, ps, BLO_NAMES[ps] || ""])));
+  doc.autoTable({
+    ...PENDING_TABLE_STYLE, startY: 60,
+    head: [["S.No", "Supervisor", "PS", "BLO Name"]],
+    body: body.length ? body : [["", "All BLOs have submitted", "", ""]],
+    columnStyles: { 1: { halign: "left" }, 3: { halign: "left" } },
+  });
+  pendingPageNumbers(doc);
+  const name = `PENDING_BLO_${fileDate(iso)}.pdf`;
+  doc.save(name);
+  return name;
+}
+
+function downloadPendingSupPdf(iso, P) {
+  const withPend = P.rows.filter((r) => r.pend.length);
+  const doc = pendingPdfDoc("AC-24 PATEL NAGAR — Supervisors with Pending BLOs", iso,
+    `${withPend.length} of ${SUPERVISORS.length} supervisors  ·  ${P.pendCount} BLOs pending`);
+  doc.autoTable({
+    ...PENDING_TABLE_STYLE, startY: 60,
+    head: [["S.No", "Supervisor", "Parts", "Submitted", "Pending", "Pending PS (BLO)"]],
+    body: withPend.length
+      ? withPend.map((r, i) => [i + 1, r.s.name, `${r.s.start}–${r.s.start + r.n - 1}`, r.n - r.pend.length, r.pend.length,
+          r.pend.map((ps) => `${ps} (${BLO_NAMES[ps] || ""})`).join(", ")])
+      : [["", "All supervisors' BLOs have submitted", "", "", "", ""]],
+    foot: withPend.length ? [["", "TOTAL", "", P.total - P.pendCount, P.pendCount, ""]] : undefined,
+    footStyles: { fillColor: [229, 231, 235], textColor: [0, 0, 0], fontStyle: "bold" },
+    showFoot: "lastPage",
+    columnStyles: { 1: { halign: "left", cellWidth: 110 }, 5: { halign: "left", fontSize: 8 } },
+    didParseCell: (data) => { if (data.section === "body" && data.column.index === 4 && Number(data.cell.raw) > 0) data.cell.styles.textColor = [185, 28, 28]; },
+  });
+  pendingPageNumbers(doc);
+  const name = `PENDING_SUPERVISOR_${fileDate(iso)}.pdf`;
+  doc.save(name);
+  return name;
+}
+
+[["pendBloPdfBtn", downloadPendingBloPdf], ["pendSupPdfBtn", downloadPendingSupPdf]].forEach(([id, fn]) => {
+  document.getElementById(id).addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget, label = btn.textContent;
+    const wrap = document.getElementById("adminResultsWrap");
+    btn.disabled = true;
+    btn.textContent = "Preparing…";
+    wrap.innerHTML = "";
+    try {
+      const iso = getReportDate();
+      const P = await pendingForDate(iso);
+      const name = fn(iso, P);
+      wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(name)} — ${P.pendCount} of ${P.total} BLOs pending on ${showDate(iso)}.</div>`;
+    } catch (err) {
+      wrap.innerHTML = `<div class="admin-empty">Could not make the pending PDF. Check your connection and try again.` +
+        `<br/><small>${escHtml(String((err && err.message) || err))}</small></div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+});
 
 // Red warning triangle with "!" (drawn as SVG so it stays red on every phone)
 const RED_WARN_ICON = `<svg width="18" height="16" viewBox="0 0 24 21" aria-label="Pending" role="img" style="flex:none">
