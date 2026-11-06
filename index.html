@@ -3086,7 +3086,7 @@ function downloadDistrictPdf() {
 
   // Pending Non-Mapping = total − disposed; red background when not zero
   const pendCell = (n, extra = {}) => ({ content: n, styles: n > 0
-    ? { fillColor: [200, 35, 35], textColor: [255, 255, 255], ...extra } : { ...extra } });
+    ? { fontSize: 12, fillColor: [200, 35, 35], textColor: [255, 255, 255], ...extra } : { fontSize: 12, ...extra } });
   const body = [];
   rows.forEach((o, i) => {
     const cells = [
@@ -3103,7 +3103,7 @@ function downloadDistrictPdf() {
   body.push(["", { content: "Total", styles: { halign: "left" } }, "",
     { content: sum("totDisc"), styles: { fontSize: 12 } }, { content: sum("totNoMap"), styles: { fontSize: 12 } },
     { content: sum("disc"), styles: { fontSize: 12 } }, { content: sum("noMap"), styles: { fontSize: 12 } },
-    pendCell(sum("totNoMap") - sum("noMap"), { fontSize: 12 })]);
+    pendCell(sum("totNoMap") - sum("noMap"), { fontSize: 13.5 })]);
 
   doc.autoTable({
     ...base, startY: doc.lastAutoTable.finalY + 8, columnStyles: colStyles,
