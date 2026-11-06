@@ -2760,6 +2760,7 @@ function parseEcinetSheet(aoa) {
   const cPart = findCol(0, (h) => h === "part no.");
   const cGen = findCol(0, (h) => h === "notice generated");
   const cDel = findCol(0, (h) => h === "notice delivered");
+  const cPendGen = findCol(0, (h) => h.startsWith("pending for notice generation"));   // optional column
   const cParkN = findCol(1, (h) => h.includes("parked for final publication w.r.t. notices generated"));
   const cOthers = findCol(1, (h) => h.includes("parked for final publication w.r.t. others"));
   const cAfter = findCol(2, (h) => h.includes("parked for final after hearing"));
@@ -2790,6 +2791,7 @@ function parseEcinetSheet(aoa) {
     rows.push({
       ps,
       generated: num(r[cGen]),
+      pendingGen: cPendGen >= 0 ? num(r[cPendGen]) : 0,
       delivered: num(r[cDel]),
       parkedNotices: num(r[cAfter]) + num(r[cWithout]),
       parkedOthers: num(r[cOthers]),
@@ -2870,7 +2872,10 @@ eciButtons[2].addEventListener("click", () => runEcinetReport(eciButtons[2], (rd
 
 /* ---------------- District Daily Report (from the ECINET Excel) ----------------
    Layout copied from "Book1_updated_v2.xlsx". Per officer:
-     Total notices (Discrepancy / Non-Mapping)  -> fixed numbers below (do not change daily)
+     Total notices – Discrepancy                -> fixed numbers below (totDisc, do not change daily)
+     Total notices – Non-Mapping                -> counted from the ECINET file for the officer's PS:
+        (Notice Generated + Pending for Notice Generation) summed over the PS  −  totDisc
+        (totNoMap below is only used if a PS is missing from the file)
      Disposed (Discrepancy / Non-Mapping)       -> summed from the ECINET file for the officer's PS:
         Discrepancy = Parked for Final (Logical Discrepancies) + Found ineligible (Logical Discrepancies)
         Non-Mapping = Parked for Final (No Mapping)            + Found ineligible (No Mapping)
@@ -2902,11 +2907,14 @@ function districtRows() {
   const byPS = {};
   eciRows.forEach((r) => { byPS[r.ps] = r; });
   return DIST_OFFICERS.map((o) => {
-    let disc = 0, noMap = 0;
+    let disc = 0, noMap = 0, cases = 0, allPS = true;
     for (let ps = o.from; ps <= o.to; ps++) {
-      if (byPS[ps]) { disc += byPS[ps].disposedDisc; noMap += byPS[ps].disposedNoMap; }
+      if (byPS[ps]) { disc += byPS[ps].disposedDisc; noMap += byPS[ps].disposedNoMap; cases += byPS[ps].generated + byPS[ps].pendingGen; }
+      else allPS = false;
     }
-    return { ...o, booths: `PS ${o.from} TO ${o.to}`, disc, noMap };
+    // Non-Mapping total = all notices/cases of these PS minus the (fixed) Discrepancy total
+    const totNoMap = allPS ? Math.max(cases - o.totDisc, noMap) : o.totNoMap;
+    return { ...o, totNoMap, booths: `PS ${o.from} TO ${o.to}`, disc, noMap };
   });
 }
 function reportDateSlash() {
