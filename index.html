@@ -613,6 +613,36 @@
       </div>
     </div>
 
+    <!-- ASDD progress reports from the ECINET ASDD Excel (made by the ASDD console script) -->
+    <div style="border:1px solid var(--line); border-radius:var(--radius); margin:0 0 16px; padding:14px;">
+      <h2 style="font-size:15px; margin:0 0 4px;">ASDD Progress Reports (Uncollectable / Digitized)</h2>
+      <p class="sub" style="margin-bottom:12px;">Upload the ASDD Excel downloaded from ECINET with the ASDD console script (it has the "All API Fields" sheet). Parts are grouped by ERO/AERO PS range.</p>
+      <div class="field">
+        <label for="asddFile">ASDD Excel file (.xls / .xlsx)</label>
+        <input type="file" id="asddFile" accept=".xlsx,.xls" />
+        <div class="hint" id="asddStatus">No file loaded yet.</div>
+      </div>
+      <div class="field">
+        <label for="asddRed">Mark part RED if progress below</label>
+        <select id="asddRed">
+          <option value="10">Less than 10%</option>
+          <option value="20">Less than 20%</option>
+          <option value="30" selected>Less than 30%</option>
+          <option value="40">Less than 40%</option>
+          <option value="50">Less than 50%</option>
+          <option value="60">Less than 60%</option>
+          <option value="70">Less than 70%</option>
+          <option value="80">Less than 80%</option>
+          <option value="90">Less than 90%</option>
+          <option value="100">Less than 100%</option>
+        </select>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button type="button" class="secondary" id="asddUncollBtn" disabled style="background:#b91c1c; color:#ffffff;">ASDD: EFs Uncollectable Report (PDF)</button>
+        <button type="button" class="secondary" id="asddDigiBtn" disabled style="background:#1d4ed8; color:#ffffff;">ASDD: EFs Digitized Report (PDF)</button>
+      </div>
+    </div>
+
     <div id="adminResultsWrap"></div>
   </div>
 </div>
@@ -3253,6 +3283,182 @@ downloadAllBtn?.addEventListener("click", async () => {
     downloadAllBtn.textContent = "Download All Data (All Dates)";
   }
 });
+
+/* ---------------- ASDD Uncollectable / Digitized progress PDFs ----------------
+   Input: the Excel made by the ECINET ASDD console script (sheet "All API Fields",
+   one row per part from the sirAsddSummary API). Progress = sum of the 5 categories
+   (uncollectableSum* or totalDigitize*) / totalElector. Parts grouped by DIST_OFFICERS. */
+const ASDD_CATS = ["AlreadyEnrolled", "Death", "Shifted", "Absent", "RefuseToSignEf"];
+const asddBtns = ["asddUncollBtn", "asddDigiBtn"].map((id) => document.getElementById(id));
+let asddRows = null;
+
+document.getElementById("asddFile").addEventListener("change", async (ev) => {
+  const st = document.getElementById("asddStatus");
+  const file = ev.target.files[0];
+  asddRows = null; asddBtns.forEach((b) => (b.disabled = true));
+  if (!file) { st.textContent = "No file loaded yet."; return; }
+  st.textContent = "Reading file…";
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    let rows = null;
+    for (const name of ["All API Fields", ...wb.SheetNames]) {
+      const ws = wb.Sheets[name];
+      if (!ws) continue;
+      const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      if (json.length && "partNumber" in json[0] && "totalElector" in json[0]) { rows = json; break; }
+    }
+    if (!rows) throw new Error('Sheet "All API Fields" (columns partNumber, totalElector…) not found. Upload the Excel made by the ASDD console script.');
+    const need = ASDD_CATS.flatMap((c) => ["uncollectableSum" + c, "totalDigitize" + c]).filter((k) => !(k in rows[0]));
+    if (need.length) throw new Error("Column(s) missing: " + need.join(", "));
+    asddRows = rows.filter((r) => Number(r.partNumber) > 0)
+      .map((r) => ({ ...r, part: Number(r.partNumber), te: Number(r.totalElector) || 0 }))
+      .sort((a, b) => a.part - b.part);
+    if (!asddRows.length) throw new Error("No part rows found in the file.");
+    const r0 = asddRows[0];
+    const ft = asddRows.map((r) => String(r.fetchTime || "")).sort().pop();
+    st.textContent = `Loaded ${asddRows.length} parts — AC-${r0.acNumber} ${r0.asmblyName || ""}${ft ? " — data as on " + ft : ""}.`;
+    asddBtns.forEach((b) => (b.disabled = false));
+  } catch (e) {
+    st.textContent = "Could not read file: " + e.message;
+  }
+});
+
+function asddProgressPdf(kind) {
+  const pre = kind === "u" ? "uncollectableSum" : "totalDigitize";
+  const title = kind === "u" ? "EFs Uncollectable" : "EFs Digitized";
+  const redBelow = Number(document.getElementById("asddRed").value) || 30;
+  const done = (r) => ASDD_CATS.reduce((s, c) => s + (Number(r[pre + c]) || 0), 0);
+  const pct = (d, t) => (t ? (d * 100) / t : null);
+  const rows = asddRows, byPart = new Map(rows.map((r) => [r.part, r]));
+  const r0 = rows[0];
+  const TE = rows.reduce((s, r) => s + r.te, 0), X = rows.reduce((s, r) => s + done(r), 0);
+  const started = rows.filter((r) => done(r) > 0).length;
+  const redCount = rows.filter((r) => r.te && pct(done(r), r.te) < redBelow).length;
+  const ft = rows.map((r) => String(r.fetchTime || "")).sort().pop() || showDate(new Date().toISOString().slice(0, 10));
+  const fmt = (n) => Number(n).toLocaleString("en-IN");
+
+  const NAVY = [31, 56, 100], LIGHT = [238, 242, 248], GRIDC = [159, 176, 204];
+  const RED_ROW = [239, 142, 138], GROUP_ROW = [220, 230, 244];
+  const barColor = (p) => (p >= 75 ? [46, 125, 50] : p >= 50 ? [156, 204, 101] : p >= 25 ? [255, 160, 0] : [183, 28, 28]);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 34;
+
+  // ---- heading ----
+  doc.setFont("helvetica", "bold"); doc.setFontSize(17); doc.setTextColor(...NAVY);
+  doc.text(`SIR Phase-3 - ASDD Electors: ${title} Progress`, M, 44);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(85, 85, 85);
+  doc.text(`AC-${r0.acNumber} ${r0.asmblyName || ""}  |  District ${r0.districtName || ""}, ${r0.stateName || ""}  |  ${rows.length} Parts  |  Data as on ${ft}`, M, 60);
+
+  // ---- KPI boxes ----
+  const bw = (W - 2 * M) / 2, by = 70, bh = 66;
+  const kpi = (x, label, value, sub) => {
+    doc.setFillColor(...LIGHT); doc.setDrawColor(201, 211, 227); doc.setLineWidth(0.8);
+    doc.rect(x, by, bw, bh, "FD");
+    doc.setTextColor(40, 40, 40); doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+    doc.text(label, x + bw / 2, by + 17, { align: "center" });
+    doc.setTextColor(...NAVY); doc.setFontSize(22); doc.text(value, x + bw / 2, by + 42, { align: "center" });
+    doc.setTextColor(50, 50, 50); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+    doc.text(sub, x + bw / 2, by + 58, { align: "center" });
+  };
+  kpi(M, "Total ASDD Electors", fmt(TE), `${rows.length} parts`);
+  kpi(M + bw, title, fmt(X), `${TE ? ((X * 100) / TE).toFixed(2) : "0.00"}% of ASDD | ${started} parts started | ${redCount} parts below ${redBelow}%`);
+
+  // ---- legend ----
+  let lx = M, ly = by + bh + 18;
+  doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont("helvetica", "bold");
+  doc.text("Bar colour:", lx, ly); lx += 58; doc.setFont("helvetica", "normal");
+  [[[183, 28, 28], "below 25%"], [[255, 160, 0], "25-50%"], [[156, 204, 101], "50-75%"], [[46, 125, 50], "75% and above"]].forEach(([c, t]) => {
+    doc.setFillColor(...c); doc.rect(lx, ly - 7, 8, 8, "F"); doc.text(t, lx + 11, ly); lx += 19 + doc.getTextWidth(t);
+  });
+  doc.setFillColor(...RED_ROW); doc.rect(lx, ly - 8.5, 46, 11, "F");
+  doc.text("Red row", lx + 4, ly); doc.text(`= part below ${redBelow}%`, lx + 50, ly);
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...NAVY);
+  doc.text(`Part-wise Progress - ${title} vs Total ASDD`, M, ly + 24);
+
+  // ---- table body (group heading row before each ERO/AERO range) ----
+  const body = [], meta = [];
+  [...DIST_OFFICERS].sort((a, b) => a.from - b.from).forEach((o) => {
+    const parts = [];
+    for (let p = o.from; p <= o.to; p++) if (byPart.has(p)) parts.push(byPart.get(p));
+    const gt = parts.reduce((s, r) => s + r.te, 0), gd = parts.reduce((s, r) => s + done(r), 0);
+    body.push([{ content: `PS ${o.from}-${o.to}  |  ${o.name}`, colSpan: 2 }, fmt(gt), ""]);
+    meta.push({ type: "group", d: gd, t: gt });
+    parts.forEach((r) => {
+      const d = done(r);
+      body.push([String(r.part), BLO_NAMES[r.part] || "", fmt(r.te), ""]);
+      meta.push({ type: "part", d, t: r.te, red: r.te > 0 && pct(d, r.te) < redBelow });
+    });
+  });
+  body.push([{ content: "TOTAL", colSpan: 2 }, fmt(TE), ""]);
+  meta.push({ type: "total", d: X, t: TE });
+
+  doc.autoTable({
+    startY: ly + 34,
+    margin: { left: M, right: M, bottom: 40 },
+    head: [["Part No", "BLO Name", "Total ASDD", `${title} vs Total ASDD (Overall)`]],
+    body,
+    theme: "grid",
+    styles: { font: "helvetica", fontSize: 10.5, cellPadding: 5, minCellHeight: 31, valign: "middle", halign: "center",
+      lineColor: GRIDC, lineWidth: 0.5, textColor: [17, 17, 17] },
+    headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 10, minCellHeight: 24 },
+    columnStyles: { 0: { cellWidth: 50, fontStyle: "bold" }, 1: { cellWidth: 140, halign: "left" }, 2: { cellWidth: 70 } },
+    didParseCell: (data) => {
+      if (data.section !== "body") return;
+      const m = meta[data.row.index];
+      if (m.type === "group") {
+        data.cell.styles.fillColor = GROUP_ROW; data.cell.styles.fontStyle = "bold"; data.cell.styles.textColor = NAVY;
+        if (data.column.index === 0) data.cell.styles.halign = "left";
+      } else if (m.type === "total") {
+        data.cell.styles.fillColor = LIGHT; data.cell.styles.fontStyle = "bold";
+      } else if (m.red) {
+        data.cell.styles.fillColor = RED_ROW;
+      }
+    },
+    didDrawCell: (data) => {
+      if (data.section !== "body") return;
+      const m = meta[data.row.index], c = data.cell;
+      if (m.type === "group" || m.type === "total") {   // thick partition line above each AERO block / total
+        doc.setDrawColor(...NAVY); doc.setLineWidth(2.5);
+        doc.line(c.x, c.y, c.x + c.width, c.y);
+      }
+      if (data.column.index !== 3) return;
+      const x = c.x + 12, w = c.width - 24, p = pct(m.d, m.t);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(17, 17, 17);
+      doc.text(`${fmt(m.d)} / ${fmt(m.t)}`, x, c.y + 12);
+      doc.text(p == null ? "N/A" : `${p.toFixed(1)}%`, x + w, c.y + 12, { align: "right" });
+      const yb = c.y + c.height - 13, hb = 7;
+      doc.setFillColor(255, 255, 255); doc.setDrawColor(138, 138, 138); doc.setLineWidth(0.5);
+      doc.roundedRect(x, yb, w, hb, hb / 2, hb / 2, "FD");
+      if (p) {
+        doc.setFillColor(...barColor(p));
+        doc.roundedRect(x, yb, Math.max((w * Math.min(p, 100)) / 100, hb), hb, hb / 2, hb / 2, "F");
+      }
+    },
+    didDrawPage: () => {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(70, 70, 70);
+      doc.text(`SIR Phase-3 ASDD ${kind === "u" ? "Uncollectable" : "Digitized"} Report | AC-${r0.acNumber} ${r0.asmblyName || ""} | Data as on ${ft}`, M, H - 18);
+      doc.text(`Page ${doc.internal.getNumberOfPages()}`, W - M, H - 18, { align: "right" });
+    },
+  });
+
+  const name = `ASDD_${kind === "u" ? "Uncollectable" : "Digitized"}_Report_AC${r0.acNumber}_${String(ft).slice(0, 10)}.pdf`;
+  doc.save(name);
+  return name;
+}
+
+asddBtns.forEach((btn, i) => btn.addEventListener("click", () => {
+  const wrap = document.getElementById("adminResultsWrap");
+  if (!asddRows) return;
+  try {
+    const name = asddProgressPdf(i === 0 ? "u" : "d");
+    wrap.innerHTML = `<div class="admin-summary">Downloaded ${escHtml(name)}.</div>`;
+  } catch (e) {
+    wrap.innerHTML = `<div class="admin-empty">Could not make the ASDD report: ${escHtml(e.message)}</div>`;
+  }
+}));
 </script>
 </body>
 </html>
