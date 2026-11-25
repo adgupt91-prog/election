@@ -3338,7 +3338,7 @@ function asddProgressPdf(kind) {
   const fmt = (n) => Number(n).toLocaleString("en-IN");
 
   const NAVY = [31, 56, 100], LIGHT = [238, 242, 248], GRIDC = [159, 176, 204];
-  const RED_ROW = [239, 142, 138], GROUP_ROW = [220, 230, 244];
+  const RED_ROW = [239, 142, 138], GROUP_ROW = [255, 235, 59];
   const barColor = (p) => (p >= 75 ? [46, 125, 50] : p >= 50 ? [156, 204, 101] : p >= 25 ? [255, 160, 0] : [183, 28, 28]);
 
   const { jsPDF } = window.jspdf;
