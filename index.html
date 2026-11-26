@@ -3325,126 +3325,192 @@ document.getElementById("asddFile").addEventListener("change", async (ev) => {
 
 function asddProgressPdf(kind) {
   const pre = kind === "u" ? "uncollectableSum" : "totalDigitize";
-  const title = kind === "u" ? "EFs Uncollectable" : "EFs Digitized";
+  const short = kind === "u" ? "Uncollectable" : "Digitized";
+  const title = "EFs " + short;
   const redBelow = Number(document.getElementById("asddRed").value) || 30;
   const done = (r) => ASDD_CATS.reduce((s, c) => s + (Number(r[pre + c]) || 0), 0);
   const pct = (d, t) => (t ? (d * 100) / t : null);
+  const pctTxt = (d, t) => { const p = pct(d, t); return p == null ? "N/A" : p.toFixed(1) + "%"; };
   const rows = asddRows, byPart = new Map(rows.map((r) => [r.part, r]));
   const r0 = rows[0];
   const TE = rows.reduce((s, r) => s + r.te, 0), X = rows.reduce((s, r) => s + done(r), 0);
   const started = rows.filter((r) => done(r) > 0).length;
-  const redCount = rows.filter((r) => r.te && pct(done(r), r.te) < redBelow).length;
+  const isRed = (r) => r.te > 0 && pct(done(r), r.te) < redBelow;
+  const redCount = rows.filter(isRed).length;
   const ft = rows.map((r) => String(r.fetchTime || "")).sort().pop() || showDate(new Date().toISOString().slice(0, 10));
   const fmt = (n) => Number(n).toLocaleString("en-IN");
+  const acLabel = `AC-${r0.acNumber} ${r0.asmblyName || ""}`.trim();
 
-  const NAVY = [31, 56, 100], LIGHT = [238, 242, 248], GRIDC = [159, 176, 204];
-  const RED_ROW = [239, 142, 138], GROUP_ROW = [255, 235, 59];
-  const barColor = (p) => (p >= 75 ? [46, 125, 50] : p >= 50 ? [156, 204, 101] : p >= 25 ? [255, 160, 0] : [183, 28, 28]);
+  // ---- palette (all text is bold black; colour only in fills/bars) ----
+  const BLACK = [0, 0, 0], NAVY = [23, 43, 77];
+  const ACCENT = kind === "u" ? [185, 28, 28] : [29, 78, 216];
+  const BORDER = [190, 200, 215], HEAD = [218, 227, 240], SOFT = [241, 245, 250];
+  const ZEBRA = [250, 251, 253], RED_TINT = [253, 224, 224], TRACK = [226, 230, 236];
+  const barColor = (p) => (p >= 75 ? [46, 125, 50] : p >= 50 ? [124, 179, 66] : p >= 25 ? [245, 158, 11] : [198, 40, 40]);
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 34;
-
-  // ---- heading ----
-  doc.setFont("helvetica", "bold"); doc.setFontSize(17); doc.setTextColor(...NAVY);
-  doc.text(`SIR Phase-3 - ASDD Electors: ${title} Progress`, M, 44);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(85, 85, 85);
-  doc.text(`AC-${r0.acNumber} ${r0.asmblyName || ""}  |  District ${r0.districtName || ""}, ${r0.stateName || ""}  |  ${rows.length} Parts  |  Data as on ${ft}`, M, 60);
-
-  // ---- KPI boxes ----
-  const bw = (W - 2 * M) / 2, by = 70, bh = 66;
-  const kpi = (x, label, value, sub) => {
-    doc.setFillColor(...LIGHT); doc.setDrawColor(201, 211, 227); doc.setLineWidth(0.8);
-    doc.rect(x, by, bw, bh, "FD");
-    doc.setTextColor(40, 40, 40); doc.setFont("helvetica", "bold"); doc.setFontSize(11);
-    doc.text(label, x + bw / 2, by + 17, { align: "center" });
-    doc.setTextColor(...NAVY); doc.setFontSize(22); doc.text(value, x + bw / 2, by + 42, { align: "center" });
-    doc.setTextColor(50, 50, 50); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
-    doc.text(sub, x + bw / 2, by + 58, { align: "center" });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 36, CW = W - 2 * M;
+  const txt = (s, x, y, size, opt) => { doc.setFont("helvetica", "bold"); doc.setFontSize(size); doc.setTextColor(...BLACK); doc.text(Array.isArray(s) ? s : String(s), x, y, opt); };
+  const bar = (x, y, w, h, p) => {
+    doc.setFillColor(...TRACK); doc.roundedRect(x, y, w, h, h / 2, h / 2, "F");
+    if (p > 0) { doc.setFillColor(...barColor(p)); doc.roundedRect(x, y, Math.max((w * Math.min(p, 100)) / 100, h), h, h / 2, h / 2, "F"); }
   };
-  kpi(M, "Total ASDD Electors", fmt(TE), `${rows.length} parts`);
-  kpi(M + bw, title, fmt(X), `${TE ? ((X * 100) / TE).toFixed(2) : "0.00"}% of ASDD | ${started} parts started | ${redCount} parts below ${redBelow}%`);
+  const topStrip = () => {
+    doc.setFillColor(...NAVY); doc.rect(0, 0, W, 7, "F");
+    doc.setFillColor(...ACCENT); doc.rect(0, 7, W, 3, "F");
+  };
+  const tableBase = {
+    theme: "grid",
+    margin: { left: M, right: M, top: 30, bottom: 44 },
+    styles: { font: "helvetica", fontStyle: "bold", fontSize: 10, textColor: BLACK, cellPadding: { top: 4, bottom: 4, left: 6, right: 6 },
+      minCellHeight: 22, valign: "middle", halign: "center", lineColor: BORDER, lineWidth: 0.6 },
+    headStyles: { fillColor: HEAD, textColor: BLACK, fontStyle: "bold", fontSize: 9.5, minCellHeight: 28, lineColor: BORDER, lineWidth: 0.6 },
+    alternateRowStyles: { fillColor: ZEBRA },
+    bodyStyles: { fillColor: [255, 255, 255] },
+  };
 
-  // ---- legend ----
-  let lx = M, ly = by + bh + 18;
-  doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont("helvetica", "bold");
-  doc.text("Bar colour:", lx, ly); lx += 58; doc.setFont("helvetica", "normal");
-  [[[183, 28, 28], "below 25%"], [[255, 160, 0], "25-50%"], [[156, 204, 101], "50-75%"], [[46, 125, 50], "75% and above"]].forEach(([c, t]) => {
-    doc.setFillColor(...c); doc.rect(lx, ly - 7, 8, 8, "F"); doc.text(t, lx + 11, ly); lx += 19 + doc.getTextWidth(t);
-  });
-  doc.setFillColor(...RED_ROW); doc.rect(lx, ly - 8.5, 46, 11, "F");
-  doc.text("Red row", lx + 4, ly); doc.text(`= part below ${redBelow}%`, lx + 50, ly);
-
-  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...NAVY);
-  doc.text(`Part-wise Progress - ${title} vs Total ASDD`, M, ly + 24);
-
-  // ---- table body (group heading row before each ERO/AERO range) ----
-  const body = [], meta = [];
-  [...DIST_OFFICERS].sort((a, b) => a.from - b.from).forEach((o) => {
+  // ---- group data ----
+  const groups = [...DIST_OFFICERS].sort((a, b) => a.from - b.from).map((o) => {
     const parts = [];
     for (let p = o.from; p <= o.to; p++) if (byPart.has(p)) parts.push(byPart.get(p));
-    const gt = parts.reduce((s, r) => s + r.te, 0), gd = parts.reduce((s, r) => s + done(r), 0);
-    body.push([{ content: `PS ${o.from}-${o.to}  |  ${o.name}`, colSpan: 2 }, fmt(gt), ""]);
-    meta.push({ type: "group", d: gd, t: gt });
-    parts.forEach((r) => {
-      const d = done(r);
-      body.push([String(r.part), BLO_NAMES[r.part] || "", fmt(r.te), ""]);
-      meta.push({ type: "part", d, t: r.te, red: r.te > 0 && pct(d, r.te) < redBelow });
+    return { o, parts, t: parts.reduce((s, r) => s + r.te, 0), d: parts.reduce((s, r) => s + done(r), 0), red: parts.filter(isRed).length };
+  }).filter((g) => g.parts.length);
+
+  /* ================= PAGE 1 : SUMMARY ================= */
+  topStrip();
+  txt("SIR Phase-3  |  ASDD Electors", M, 42, 18);
+  txt(`${title} - Progress Report`, M, 64, 14);
+  txt(`${acLabel}   |   District ${r0.districtName || ""}, ${r0.stateName || ""}   |   ${rows.length} Parts   |   Data as on ${ft}`, M, 82, 9.5);
+  doc.setDrawColor(...NAVY); doc.setLineWidth(1.2); doc.line(M, 92, W - M, 92);
+
+  // KPI cards
+  const gap = 10, cw = (CW - 3 * gap) / 4, cy = 106, ch = 76;
+  const overallP = pct(X, TE) || 0;
+  const cards = [
+    ["Total ASDD Electors", fmt(TE), `${rows.length} parts`, NAVY],
+    [title, fmt(X), `out of ${fmt(TE)}`, ACCENT],
+    ["Overall Progress", overallP.toFixed(2) + "%", null, barColor(overallP)],
+    [`Parts below ${redBelow}%`, fmt(redCount), `${started} parts started`, [198, 40, 40]],
+  ];
+  cards.forEach(([label, value, sub, col], i) => {
+    const x = M + i * (cw + gap);
+    doc.setFillColor(255, 255, 255); doc.setDrawColor(...BORDER); doc.setLineWidth(0.8);
+    doc.roundedRect(x, cy, cw, ch, 6, 6, "FD");
+    doc.setFillColor(...col); doc.rect(x + 0.4, cy + 10, 4, ch - 20, "F");
+    txt(label, x + cw / 2 + 2, cy + 18, 8.5, { align: "center" });
+    txt(value, x + cw / 2 + 2, cy + 45, 19, { align: "center" });
+    if (sub) txt(sub, x + cw / 2 + 2, cy + 63, 8.5, { align: "center" });
+    else bar(x + 16, cy + 57, cw - 26, 7, overallP);
+  });
+
+  // legend
+  let lx = M, ly = cy + ch + 22;
+  txt("Bar colour:", lx, ly, 9); lx += doc.getTextWidth("Bar colour:") + 10;
+  [[[198, 40, 40], "below 25%"], [[245, 158, 11], "25-50%"], [[124, 179, 66], "50-75%"], [[46, 125, 50], "75% and above"]].forEach(([c, t]) => {
+    doc.setFillColor(...c); doc.roundedRect(lx, ly - 7.5, 16, 8, 4, 4, "F");
+    txt(t, lx + 20, ly, 9); lx += 30 + doc.getTextWidth(t);
+  });
+  doc.setFillColor(...RED_TINT); doc.setDrawColor(...BORDER); doc.rect(lx, ly - 9, 14, 11, "FD");
+  txt(`= part below ${redBelow}%`, lx + 18, ly, 9);
+
+  // AERO-wise summary table
+  const sy = ly + 30;
+  doc.setFillColor(...NAVY); doc.rect(M, sy - 12, 4, 16, "F");
+  txt("AERO-wise Summary", M + 10, sy, 13);
+  const sumBody = groups.map((g, i) => [String(i + 1), `PS ${g.o.from}-${g.o.to}`, g.o.name, String(g.parts.length), fmt(g.t), fmt(g.d), pctTxt(g.d, g.t), ""]);
+  sumBody.push(["", { content: "TOTAL", colSpan: 2, styles: { halign: "left" } }, String(rows.length), fmt(TE), fmt(X), pctTxt(X, TE), ""]);
+  const sumMeta = [...groups.map((g) => pct(g.d, g.t)), pct(X, TE)];
+  doc.autoTable({
+    ...tableBase,
+    startY: sy + 10,
+    head: [["S.No", "PS Range", "AERO / Officer", "Parts", "Total\nASDD", title, "%", "Progress"]],
+    body: sumBody,
+    columnStyles: { 0: { cellWidth: 32 }, 1: { cellWidth: 62 }, 2: { halign: "left" }, 3: { cellWidth: 38 }, 4: { cellWidth: 52 },
+      5: { cellWidth: 62 }, 6: { cellWidth: 46 }, 7: { cellWidth: 82 } },
+    didParseCell: (d) => {
+      if (d.section === "body" && d.row.index === sumBody.length - 1) { d.cell.styles.fillColor = HEAD; d.cell.styles.fontSize = 10.5; }
+    },
+    didDrawCell: (d) => {
+      if (d.section !== "body") return;
+      const c = d.cell;
+      if (d.row.index === sumBody.length - 1 && d.column.index === 0) { doc.setDrawColor(...NAVY); doc.setLineWidth(1.5); doc.line(M, c.y, W - M, c.y); }
+      if (d.column.index !== 7) return;
+      const p = sumMeta[d.row.index];
+      if (p != null) bar(c.x + 8, c.y + c.height / 2 - 3.5, c.width - 16, 7, p);
+    },
+  });
+  const ny = doc.lastAutoTable.finalY + 18;
+  if (ny < H - 60) txt("Part-wise details of each AERO are given on the following pages (one AERO per page).", M, ny, 9);
+
+  /* ================= ONE PAGE (or more) PER AERO ================= */
+  groups.forEach((g, gi) => {
+    doc.addPage();
+    topStrip();
+    txt(`${title} - Part-wise Progress`, M, 30, 9);
+    txt(`AERO ${gi + 1} of ${groups.length}`, W - M, 30, 9, { align: "right" });
+
+    // section card
+    const y0 = 40, hC = 80, leftW = 200;
+    doc.setFillColor(...SOFT); doc.setDrawColor(...BORDER); doc.setLineWidth(0.8);
+    doc.roundedRect(M, y0, CW, hC, 6, 6, "FD");
+    doc.setFillColor(...ACCENT); doc.rect(M + 0.4, y0 + 10, 5, hC - 20, "F");
+    txt(`PS ${g.o.from} - ${g.o.to}`, M + 16, y0 + 24, 16);
+    doc.setFontSize(11);
+    const nm = doc.splitTextToSize(g.o.name, leftW - 10);
+    txt(nm.slice(0, 2), M + 16, y0 + 42, 11);
+    const gp = pct(g.d, g.t) || 0;
+    bar(M + 16, y0 + hC - 16, leftW - 20, 7, gp);
+
+    const stats = [["Parts", String(g.parts.length)], ["Total ASDD", fmt(g.t)], [title, fmt(g.d)], ["Progress", gp.toFixed(1) + "%"], [`Below ${redBelow}%`, String(g.red)]];
+    const sx0 = M + leftW + 10, sw = (W - M - 10 - sx0) / stats.length;
+    stats.forEach(([lab, val], i) => {
+      const x = sx0 + i * sw;
+      doc.setFillColor(255, 255, 255); doc.setDrawColor(...BORDER); doc.setLineWidth(0.6);
+      doc.roundedRect(x + 3, y0 + 14, sw - 6, hC - 28, 4, 4, "FD");
+      doc.setFontSize(7.5);
+      txt(doc.splitTextToSize(lab, sw - 12)[0], x + sw / 2, y0 + 30, 7.5, { align: "center" });
+      txt(val, x + sw / 2, y0 + 52, 13, { align: "center" });
+    });
+
+    // part table
+    const body = g.parts.map((r) => [String(r.part), BLO_NAMES[r.part] || "", fmt(r.te), fmt(done(r)), pctTxt(done(r), r.te), ""]);
+    const meta = g.parts.map((r) => ({ p: pct(done(r), r.te), red: isRed(r) }));
+    body.push([{ content: "AERO TOTAL", colSpan: 2, styles: { halign: "left" } }, fmt(g.t), fmt(g.d), pctTxt(g.d, g.t), ""]);
+    meta.push({ p: pct(g.d, g.t), total: true });
+
+    doc.autoTable({
+      ...tableBase,
+      startY: y0 + hC + 14,
+      head: [["Part\nNo", "BLO Name", "Total\nASDD", title, "%", "Progress"]],
+      body,
+      columnStyles: { 0: { cellWidth: 44 }, 1: { halign: "left" }, 2: { cellWidth: 62 }, 3: { cellWidth: 82 }, 4: { cellWidth: 52 }, 5: { cellWidth: 96 } },
+      didParseCell: (d) => {
+        if (d.section !== "body") return;
+        const m = meta[d.row.index];
+        if (m.total) { d.cell.styles.fillColor = HEAD; d.cell.styles.fontSize = 10.5; }
+        else if (m.red) d.cell.styles.fillColor = RED_TINT;
+      },
+      didDrawCell: (d) => {
+        if (d.section !== "body") return;
+        const m = meta[d.row.index], c = d.cell;
+        if (m.total && d.column.index === 0) { doc.setDrawColor(...NAVY); doc.setLineWidth(1.5); doc.line(M, c.y, W - M, c.y); }
+        if (m.red && d.column.index === 0) { doc.setFillColor(198, 40, 40); doc.rect(c.x, c.y, 3, c.height, "F"); }
+        if (d.column.index === 5 && m.p != null) bar(c.x + 8, c.y + c.height / 2 - 3.5, c.width - 16, 7, m.p);
+      },
     });
   });
-  body.push([{ content: "TOTAL", colSpan: 2 }, fmt(TE), ""]);
-  meta.push({ type: "total", d: X, t: TE });
 
-  doc.autoTable({
-    startY: ly + 34,
-    margin: { left: M, right: M, bottom: 40 },
-    head: [["Part No", "BLO Name", "Total ASDD", `${title} vs Total ASDD (Overall)`]],
-    body,
-    theme: "grid",
-    styles: { font: "helvetica", fontSize: 10.5, cellPadding: 5, minCellHeight: 31, valign: "middle", halign: "center",
-      lineColor: GRIDC, lineWidth: 0.5, textColor: [17, 17, 17] },
-    headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 10, minCellHeight: 24 },
-    columnStyles: { 0: { cellWidth: 50, fontStyle: "bold" }, 1: { cellWidth: 140, halign: "left" }, 2: { cellWidth: 70 } },
-    didParseCell: (data) => {
-      if (data.section !== "body") return;
-      const m = meta[data.row.index];
-      if (m.type === "group") {
-        data.cell.styles.fillColor = GROUP_ROW; data.cell.styles.fontStyle = "bold"; data.cell.styles.textColor = NAVY;
-        if (data.column.index === 0) data.cell.styles.halign = "left";
-      } else if (m.type === "total") {
-        data.cell.styles.fillColor = LIGHT; data.cell.styles.fontStyle = "bold";
-      } else if (m.red) {
-        data.cell.styles.fillColor = RED_ROW;
-      }
-    },
-    didDrawCell: (data) => {
-      if (data.section !== "body") return;
-      const m = meta[data.row.index], c = data.cell;
-      if (m.type === "group" || m.type === "total") {   // thick partition line above each AERO block / total
-        doc.setDrawColor(...NAVY); doc.setLineWidth(2.5);
-        doc.line(c.x, c.y, c.x + c.width, c.y);
-      }
-      if (data.column.index !== 3) return;
-      const x = c.x + 12, w = c.width - 24, p = pct(m.d, m.t);
-      doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(17, 17, 17);
-      doc.text(`${fmt(m.d)} / ${fmt(m.t)}`, x, c.y + 12);
-      doc.text(p == null ? "N/A" : `${p.toFixed(1)}%`, x + w, c.y + 12, { align: "right" });
-      const yb = c.y + c.height - 13, hb = 7;
-      doc.setFillColor(255, 255, 255); doc.setDrawColor(138, 138, 138); doc.setLineWidth(0.5);
-      doc.roundedRect(x, yb, w, hb, hb / 2, hb / 2, "FD");
-      if (p) {
-        doc.setFillColor(...barColor(p));
-        doc.roundedRect(x, yb, Math.max((w * Math.min(p, 100)) / 100, hb), hb, hb / 2, hb / 2, "F");
-      }
-    },
-    didDrawPage: () => {
-      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(70, 70, 70);
-      doc.text(`SIR Phase-3 ASDD ${kind === "u" ? "Uncollectable" : "Digitized"} Report | AC-${r0.acNumber} ${r0.asmblyName || ""} | Data as on ${ft}`, M, H - 18);
-      doc.text(`Page ${doc.internal.getNumberOfPages()}`, W - M, H - 18, { align: "right" });
-    },
-  });
+  // ---- footer on every page ----
+  const n = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(...BORDER); doc.setLineWidth(0.6); doc.line(M, H - 30, W - M, H - 30);
+    txt(`SIR Phase-3 ASDD ${short} Report  |  ${acLabel}  |  Data as on ${ft}`, M, H - 17, 8);
+    txt(`Page ${i} of ${n}`, W - M, H - 17, 8, { align: "right" });
+  }
 
-  const name = `ASDD_${kind === "u" ? "Uncollectable" : "Digitized"}_Report_AC${r0.acNumber}_${String(ft).slice(0, 10)}.pdf`;
+  const name = `ASDD_${short}_Report_AC${r0.acNumber}_${String(ft).slice(0, 10)}.pdf`;
   doc.save(name);
   return name;
 }
