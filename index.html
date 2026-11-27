@@ -613,10 +613,10 @@
       </div>
     </div>
 
-    <!-- ASDD progress reports from the ECINET ASDD Excel (made by the ASDD console script) -->
+    <!-- ASDD progress report from the ECINET "ASDD PART WISE REPORT" Excel -->
     <div style="border:1px solid var(--line); border-radius:var(--radius); margin:0 0 16px; padding:14px;">
       <h2 style="font-size:15px; margin:0 0 4px;">ASDD Progress Report (Digitized + Uncollectable)</h2>
-      <p class="sub" style="margin-bottom:12px;">Upload the ASDD Excel downloaded from ECINET with the ASDD console script (it has the "All API Fields" sheet). Parts are grouped by ERO/AERO PS range.</p>
+      <p class="sub" style="margin-bottom:12px;">Upload the "ASDD PART WISE REPORT" Excel downloaded from ECINET (the older console-script Excel also works). Parts are grouped by ERO/AERO PS range.</p>
       <div class="field">
         <label for="asddFile">ASDD Excel file (.xls / .xlsx)</label>
         <input type="file" id="asddFile" accept=".xlsx,.xls" />
@@ -3284,8 +3284,8 @@ downloadAllBtn?.addEventListener("click", async () => {
 });
 
 /* ---------------- ASDD Uncollectable / Digitized progress PDFs ----------------
-   Input: the Excel made by the ECINET ASDD console script (sheet "All API Fields",
-   one row per part from the sirAsddSummary API). Progress = sum of the 5 categories
+   Input: ECINET "ASDD PART WISE REPORT" Excel (sheet SirAsddSummary), or the older
+   Excel made by the ECINET ASDD console script (sheet "All API Fields"). Progress = sum of the 5 categories
    (uncollectableSum* or totalDigitize*) / totalElector. Parts grouped by DIST_OFFICERS. */
 const ASDD_CATS = ["AlreadyEnrolled", "Death", "Shifted", "Absent", "RefuseToSignEf"];
 const asddBtns = ["asddUncollBtn"].map((id) => document.getElementById(id));
@@ -3299,19 +3299,50 @@ document.getElementById("asddFile").addEventListener("change", async (ev) => {
   st.textContent = "Reading file…";
   try {
     const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-    let rows = null;
-    for (const name of ["All API Fields", ...wb.SheetNames]) {
-      const ws = wb.Sheets[name];
-      if (!ws) continue;
-      const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
-      if (json.length && "partNumber" in json[0] && "totalElector" in json[0]) { rows = json; break; }
+    const csum = (r, pre) => ASDD_CATS.reduce((s, c) => s + (Number(r[pre + c]) || 0), 0);
+    const fileDate = (() => { const d = new Date(file.lastModified || Date.now());
+      return [d.getDate(), d.getMonth() + 1, d.getFullYear()].map((n) => String(n).padStart(2, "0")).join("-"); })();
+    let parsed = null;
+
+    // Format 1: ECINET "ASDD PART WISE REPORT" download (sheet SirAsddSummary):
+    //   Part Number | Total ASDD Electors | Total Uncollectable | … | Total EF Digitised | …
+    const normH = (v) => String(v == null ? "" : v).toLowerCase().replace(/[^a-z0-9%]/g, "");
+    for (const name of wb.SheetNames) {
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
+      const hi = aoa.findIndex((r) => r && r.some((c) => normH(c) === "partnumber"));
+      if (hi < 0) continue;
+      const h = aoa[hi].map(normH), col = (k) => h.indexOf(k);
+      const cPart = col("partnumber"), cTE = col("totalasddelectors"), cUnc = col("totaluncollectable"), cDig = col("totalefdigitised");
+      if (cTE < 0) continue; // not this format (e.g. older "All API Fields" sheet)
+      const miss = [["Part Number", cPart], ["Total ASDD Electors", cTE], ["Total Uncollectable", cUnc], ["Total EF Digitised", cDig]]
+        .filter(([, i]) => i < 0).map(([n]) => n);
+      if (miss.length) throw new Error("Column(s) missing: " + miss.join(", "));
+      const cSt = col("statename"), cDist = col("districtname"), cAc = col("acnumber"), cAcn = col("asmblyname");
+      parsed = aoa.slice(hi + 1).filter((r) => Number(r[cPart]) > 0).map((r) => ({
+        part: Number(r[cPart]), te: Number(r[cTE]) || 0, uncN: Number(r[cUnc]) || 0, digiN: Number(r[cDig]) || 0,
+        acNumber: cAc >= 0 ? Number(r[cAc]) || r[cAc] : "", asmblyName: cAcn >= 0 ? r[cAcn] : "",
+        districtName: cDist >= 0 ? r[cDist] : "", stateName: cSt >= 0 ? r[cSt] : "", fetchTime: fileDate,
+      }));
+      break;
     }
-    if (!rows) throw new Error('Sheet "All API Fields" (columns partNumber, totalElector…) not found. Upload the Excel made by the ASDD console script.');
-    const need = ASDD_CATS.flatMap((c) => ["uncollectableSum" + c, "totalDigitize" + c]).filter((k) => !(k in rows[0]));
-    if (need.length) throw new Error("Column(s) missing: " + need.join(", "));
-    asddRows = rows.filter((r) => Number(r.partNumber) > 0)
-      .map((r) => ({ ...r, part: Number(r.partNumber), te: Number(r.totalElector) || 0 }))
-      .sort((a, b) => a.part - b.part);
+
+    // Format 2 (older): Excel from the ASDD console script (sheet "All API Fields")
+    if (!parsed) {
+      for (const name of ["All API Fields", ...wb.SheetNames]) {
+        const ws = wb.Sheets[name];
+        if (!ws) continue;
+        const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        if (json.length && "partNumber" in json[0] && "totalElector" in json[0]) {
+          parsed = json.filter((r) => Number(r.partNumber) > 0).map((r) => ({
+            ...r, part: Number(r.partNumber), te: Number(r.totalElector) || 0,
+            uncN: csum(r, "uncollectableSum"), digiN: csum(r, "totalDigitize"),
+          }));
+          break;
+        }
+      }
+    }
+    if (!parsed) throw new Error('Not an ASDD part-wise report. Upload the ECINET "ASDD PART WISE REPORT" Excel (columns Part Number, Total ASDD Electors, Total Uncollectable, Total EF Digitised).');
+    asddRows = parsed.sort((a, b) => a.part - b.part);
     if (!asddRows.length) throw new Error("No part rows found in the file.");
     const r0 = asddRows[0];
     const ft = asddRows.map((r) => String(r.fetchTime || "")).sort().pop();
@@ -3324,8 +3355,7 @@ document.getElementById("asddFile").addEventListener("change", async (ev) => {
 
 /* Progress of a part = (EFs Digitized + EFs Uncollectable) / Total ASDD electors (totalElector). */
 function asddProgressPdf() {
-  const sum = (r, pre) => ASDD_CATS.reduce((s, c) => s + (Number(r[pre + c]) || 0), 0);
-  const digi = (r) => sum(r, "totalDigitize"), unc = (r) => sum(r, "uncollectableSum");
+  const digi = (r) => r.digiN || 0, unc = (r) => r.uncN || 0;
   const done = (r) => digi(r) + unc(r);
   const redBelow = Number(document.getElementById("asddRed").value) || 30;
   const pct = (d, t) => (t ? (d * 100) / t : null);
