@@ -2781,6 +2781,49 @@ let eciRows = null; // [{ps, generated, delivered, parkedNotices, parkedOthers}]
 
 function parseEcinetSheet(aoa) {
   const norm = (v) => String(v == null ? "" : v).toLowerCase().replace(/\s+/g, " ").trim();
+
+  // ---- New ECINET format (Nov 2026, sheet "sirNoticeGenerate"): ONE flat heading row ----
+  //   Part No | Notice Generated | Pending for Notice Generation | Notice Delivered | …
+  //   ERO/AERO Status Parked For Final Publication | ERO/AERO Parked For Final Publication w.r.t. Others |
+  //   Parked For Final Logical Discrepancies | Parked For Final No Mapping |
+  //   Found Ineligible For Final Logical Discrepancies | Found Ineligible For Final No Mapping
+  const flatIdx = aoa.findIndex((r) => r && r.some((c) => norm(c) === "part no") && r.some((c) => norm(c) === "notice generated"));
+  if (flatIdx >= 0) {
+    const h = aoa[flatIdx].map(norm), col = (k) => h.indexOf(k);
+    const c = {
+      part: col("part no"), gen: col("notice generated"), pendGen: col("pending for notice generation"),
+      del: col("notice delivered"), parkN: col("ero/aero status parked for final publication"),
+      others: col("ero/aero parked for final publication w.r.t. others"),
+      pfLD: col("parked for final logical discrepancies"), pfNM: col("parked for final no mapping"),
+      fiLD: col("found ineligible for final logical discrepancies"), fiNM: col("found ineligible for final no mapping"),
+    };
+    const missing = [["Part No", c.part], ["Notice Generated", c.gen], ["Notice Delivered", c.del],
+      ["ERO/AERO Status Parked For Final Publication", c.parkN], ["ERO/AERO Parked For Final Publication w.r.t. Others", c.others]]
+      .filter(([, i]) => i < 0).map(([n]) => n);
+    if (missing.length) throw new Error("Column(s) not found: " + missing.join(", ") + ". The ECINET format may have changed.");
+    const hasDisp = [c.pfLD, c.pfNM, c.fiLD, c.fiNM].every((i) => i >= 0);
+    const n = (v) => Number(v) || 0;
+    const rows = [];
+    for (let i = flatIdx + 1; i < aoa.length; i++) {
+      const r = aoa[i] || [];
+      const ps = Number(r[c.part]);
+      if (!Number.isInteger(ps) || ps < 1) continue;
+      rows.push({
+        ps,
+        generated: n(r[c.gen]),
+        pendingGen: c.pendGen >= 0 ? n(r[c.pendGen]) : 0,
+        delivered: n(r[c.del]),
+        parkedNotices: n(r[c.parkN]),
+        parkedOthers: n(r[c.others]),
+        disposedDisc: hasDisp ? n(r[c.pfLD]) + n(r[c.fiLD]) : null,
+        disposedNoMap: hasDisp ? n(r[c.pfNM]) + n(r[c.fiNM]) : null,
+      });
+    }
+    if (rows.length === 0) throw new Error("No PS rows found in the file.");
+    return rows;
+  }
+
+  // ---- Older ECINET format: 3-row merged heading with "Part No." ----
   // Find the heading rows by locating "Part No." and the parked sub-headings.
   const headIdx = aoa.findIndex((r) => r && r.some((c) => norm(c) === "part no."));
   if (headIdx < 0) {
