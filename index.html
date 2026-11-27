@@ -2783,7 +2783,11 @@ function parseEcinetSheet(aoa) {
   const norm = (v) => String(v == null ? "" : v).toLowerCase().replace(/\s+/g, " ").trim();
   // Find the heading rows by locating "Part No." and the parked sub-headings.
   const headIdx = aoa.findIndex((r) => r && r.some((c) => norm(c) === "part no."));
-  if (headIdx < 0) throw new Error('Could not find the "Part No." column. Is this the Notice & Hearing Report from ECINET?');
+  if (headIdx < 0) {
+    const isAsdd = aoa.some((r) => r && r.some((c) => norm(c) === "total asdd electors"));
+    if (isAsdd) throw new Error('This is the ASDD PART WISE REPORT. Please upload it in the "ASDD Progress Report (Digitized + Uncollectable)" box below, not here. This box is only for the Notice & Hearing Report.');
+    throw new Error('Could not find the "Part No." column. Is this the Notice & Hearing Report from ECINET?');
+  }
   const heads = [0, 1, 2].map((k) => (aoa[headIdx + k] || []).map(norm));
   const findCol = (row, test) => heads[row].findIndex(test);
   const cPart = findCol(0, (h) => h === "part no.");
